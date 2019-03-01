@@ -41,6 +41,7 @@ enum dsa_tag_protocol {
 	DSA_TAG_PROTO_KSZ9893,
 	DSA_TAG_PROTO_LAN9303,
 	DSA_TAG_PROTO_MTK,
+	DSA_TAG_PROTO_SJA1105,
 	DSA_TAG_PROTO_QCA,
 	DSA_TAG_PROTO_TRAILER,
 	DSA_TAG_LAST,		/* MUST BE LAST */
@@ -262,6 +263,11 @@ static inline unsigned int dsa_towards_port(struct dsa_switch *ds, int device,
 		return port;
 	else
 		return ds->rtable[device];
+}
+
+static inline u16 dsa_get_pseudo_pvid(struct dsa_switch *ds, int port)
+{
+	return 4000 + port;
 }
 
 /* Return the local port used to reach the dedicated CPU port */
