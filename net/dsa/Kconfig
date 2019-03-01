@@ -54,6 +54,9 @@ config NET_DSA_TAG_LAN9303
 config NET_DSA_TAG_MTK
 	bool
 
+config NET_DSA_TAG_PSEUDO_8021Q
+	bool
+
 config NET_DSA_TAG_TRAILER
 	bool
 

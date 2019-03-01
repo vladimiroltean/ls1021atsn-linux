@@ -65,6 +65,9 @@ const struct dsa_device_ops *dsa_device_ops[DSA_TAG_LAST] = {
 #ifdef CONFIG_NET_DSA_TAG_MTK
 	[DSA_TAG_PROTO_MTK] = &mtk_netdev_ops,
 #endif
+#ifdef CONFIG_NET_DSA_TAG_PSEUDO_8021Q
+	[DSA_TAG_PROTO_PSEUDO_8021Q] = &pseudo_8021q_netdev_ops,
+#endif
 #ifdef CONFIG_NET_DSA_TAG_QCA
 	[DSA_TAG_PROTO_QCA] = &qca_netdev_ops,
 #endif
@@ -101,6 +104,9 @@ const char *dsa_tag_protocol_to_str(const struct dsa_device_ops *ops)
 #endif
 #ifdef CONFIG_NET_DSA_TAG_MTK
 		[DSA_TAG_PROTO_MTK] = "mtk",
+#endif
+#ifdef CONFIG_NET_DSA_TAG_PSEUDO_8021Q
+		[DSA_TAG_PROTO_PSEUDO_8021Q] = "pseudo-8021q",
 #endif
 #ifdef CONFIG_NET_DSA_TAG_QCA
 		[DSA_TAG_PROTO_QCA] = "qca",
