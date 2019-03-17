@@ -142,6 +142,7 @@ struct dsa_port {
 	const struct dsa_port	*cpu_dp;
 	struct device_node	*dn;
 	unsigned int		ageing_time;
+	bool			vlan_filtering;
 	u8			stp_state;
 	struct net_device	*bridge_dev;
 	struct devlink_port	devlink_port;
