@@ -515,3 +515,42 @@ int dsa_port_get_phy_sset_count(struct dsa_port *dp)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(dsa_port_get_phy_sset_count);
+
+int dsa_port_setup_vlan_tagging(struct dsa_switch *ds, int port, bool enabled)
+{
+	int upstream = dsa_upstream_port(ds, port);
+	/* Can't use dsa_to_port due to const pointer */
+	struct dsa_port *dp = &ds->ports[port];
+	struct dsa_port *upstream_dp = &ds->ports[upstream];
+	u16 pvid = ds->ops->tagging_vid_from_port(ds, port);
+	int err;
+
+	/* CPU port is implicitly configured by configuring the user
+	 * ports: we need to add their pvid to its VLAN port
+	 * membership. The only specific thing to do for CPU port is
+	 * to disallow untagged input if the switch tagging is enabled.
+	 */
+	if (port == upstream) {
+		if (!ds->ops->port_set_drop_policy)
+			return 0;
+		return ds->ops->port_set_drop_policy(ds, upstream, enabled,
+						    false);
+	}
+
+	/* Apply a unique pvid to the user port and
+	 * set it up as untagged egress
+	 */
+	err = dsa_port_trans_vlan_add(dp, pvid, BRIDGE_VLAN_INFO_BRENTRY |
+						BRIDGE_VLAN_INFO_PVID |
+						BRIDGE_VLAN_INFO_UNTAGGED);
+	if (err)
+		return err;
+
+	/* Finally add the user port's pvid to the CPU port's trunk
+	 * (tagged egress). Or remove it, if "enabled" indicates so.
+	 */
+	return dsa_port_trans_vlan_add(upstream_dp, pvid,
+				       BRIDGE_VLAN_INFO_BRENTRY);
+}
+EXPORT_SYMBOL_GPL(dsa_port_setup_vlan_tagging);
+

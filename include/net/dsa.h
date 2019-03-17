@@ -290,6 +290,8 @@ struct dsa_switch_ops {
 
 	enum dsa_tag_protocol (*get_tag_protocol)(struct dsa_switch *ds,
 						  int port);
+	u16 (*tagging_vid_from_port)(struct dsa_switch *ds, int port);
+	int (*tagging_vid_to_port)(struct dsa_switch *ds, u16 vid);
 
 	int	(*setup)(struct dsa_switch *ds);
 	u32	(*get_phy_flags)(struct dsa_switch *ds, int port);
@@ -415,6 +417,8 @@ struct dsa_switch_ops {
 			      const struct switchdev_obj_port_vlan *vlan);
 	int	(*port_vlan_del)(struct dsa_switch *ds, int port,
 				 const struct switchdev_obj_port_vlan *vlan);
+	int	(*port_set_drop_policy)(struct dsa_switch *ds, int port,
+					bool drop_untagged, bool drop_double_tagged);
 	/*
 	 * Forwarding database
 	 */
@@ -573,6 +577,7 @@ static inline int call_dsa_notifiers(unsigned long val, struct net_device *dev,
 int dsa_port_get_phy_strings(struct dsa_port *dp, uint8_t *data);
 int dsa_port_get_ethtool_phy_stats(struct dsa_port *dp, uint64_t *data);
 int dsa_port_get_phy_sset_count(struct dsa_port *dp);
+int dsa_port_setup_vlan_tagging(struct dsa_switch *ds, int index, bool enabled);
 void dsa_port_phylink_mac_change(struct dsa_switch *ds, int port, bool up);
 
 #endif

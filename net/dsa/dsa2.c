@@ -314,6 +314,11 @@ static int dsa_port_setup(struct dsa_port *dp)
 		break;
 	}
 
+	if (dp->type != DSA_PORT_TYPE_UNUSED && ds->ops->tagging_vid_from_port)
+		err = dsa_port_setup_vlan_tagging(ds, dp->index, true);
+	if (err)
+		return err;
+
 	return 0;
 }
 
