@@ -164,6 +164,8 @@ int dsa_port_pre_bridge_flags(const struct dsa_port *dp, unsigned long flags,
 			      struct switchdev_trans *trans);
 int dsa_port_bridge_flags(const struct dsa_port *dp, unsigned long flags,
 			  struct switchdev_trans *trans);
+int dsa_port_trans_vlan_add(struct dsa_port *dp,
+			    u16 vid, u16 flags);
 int dsa_port_vlan_add(struct dsa_port *dp,
 		      const struct switchdev_obj_port_vlan *vlan,
 		      struct switchdev_trans *trans);
