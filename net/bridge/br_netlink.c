@@ -155,6 +155,9 @@ static inline size_t br_port_info_size(void)
 		+ nla_total_size(sizeof(u8))	/* IFLA_BRPORT_MULTICAST_ROUTER */
 #endif
 		+ nla_total_size(sizeof(u16))	/* IFLA_BRPORT_GROUP_FWD_MASK */
+#ifdef CONFIG_BRIDGE_VLAN_FILTERING
+		+ nla_total_size(sizeof(u16))	/* IFLA_BRPORT_VLAN_DEFAULT_PVID */
+#endif
 		+ 0;
 }
 
@@ -236,6 +239,11 @@ static int br_port_fill_attrs(struct sk_buff *skb,
 #ifdef CONFIG_BRIDGE_IGMP_SNOOPING
 	if (nla_put_u8(skb, IFLA_BRPORT_MULTICAST_ROUTER,
 		       p->multicast_router))
+		return -EMSGSIZE;
+#endif
+
+#ifdef CONFIG_BRIDGE_VLAN_FILTERING
+	if (nla_put_u16(skb, IFLA_BRPORT_VLAN_DEFAULT_PVID, p->default_pvid))
 		return -EMSGSIZE;
 #endif
 
@@ -679,6 +687,7 @@ static const struct nla_policy br_port_policy[IFLA_BRPORT_MAX + 1] = {
 	[IFLA_BRPORT_NEIGH_SUPPRESS] = { .type = NLA_U8 },
 	[IFLA_BRPORT_ISOLATED]	= { .type = NLA_U8 },
 	[IFLA_BRPORT_BACKUP_PORT] = { .type = NLA_U32 },
+	[IFLA_BRPORT_VLAN_DEFAULT_PVID] = { .type = NLA_U16 },
 };
 
 /* Change the state of the port and notify spanning tree */
@@ -849,6 +858,19 @@ static int br_setport(struct net_bridge_port *p, struct nlattr *tb[])
 		if (err)
 			return err;
 	}
+
+#ifdef CONFIG_BRIDGE_VLAN_FILTERING
+	if (tb[IFLA_BRPORT_VLAN_DEFAULT_PVID]) {
+		u16 default_pvid = nla_get_u16(tb[IFLA_BRPORT_VLAN_DEFAULT_PVID]);
+
+		if (default_pvid >= VLAN_VID_MASK)
+			return -EINVAL;
+
+		err = nbp_vlan_set_default_pvid(p, default_pvid);
+		if (err)
+			return err;
+	}
+#endif
 
 	br_port_flags_change(p, old_flags ^ p->flags);
 	return 0;

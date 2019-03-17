@@ -223,6 +223,23 @@ static int store_backup_port(struct net_bridge_port *p, char *buf)
 }
 static BRPORT_ATTR_RAW(backup_port, 0644, show_backup_port, store_backup_port);
 
+#ifdef CONFIG_BRIDGE_VLAN_FILTERING
+static ssize_t show_port_default_pvid(struct net_bridge_port *p, char *buf)
+{
+	return sprintf(buf, "%d\n", p->default_pvid);
+}
+
+static int store_port_default_pvid(struct net_bridge_port *p,
+			      unsigned long v)
+{
+	p->default_pvid = v;
+
+	return 0;
+}
+static BRPORT_ATTR(vlan_default_pvid, 0644, show_port_default_pvid,
+		   store_port_default_pvid);
+#endif
+
 BRPORT_ATTR_FLAG(hairpin_mode, BR_HAIRPIN_MODE);
 BRPORT_ATTR_FLAG(bpdu_guard, BR_BPDU_GUARD);
 BRPORT_ATTR_FLAG(root_block, BR_ROOT_BLOCK);
@@ -287,6 +304,9 @@ static const struct brport_attribute *brport_attrs[] = {
 	&brport_attr_neigh_suppress,
 	&brport_attr_isolated,
 	&brport_attr_backup_port,
+#ifdef CONFIG_BRIDGE_VLAN_FILTERING
+	&brport_attr_vlan_default_pvid,
+#endif
 	NULL
 };
 

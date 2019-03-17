@@ -1128,6 +1128,17 @@ err_vlan_enabled:
  * Must be called with vid in range from 1 to 4094 inclusive.
  * changed must be true only if the vlan was created or updated
  */
+int nbp_vlan_set_default_pvid(struct net_bridge_port *port, unsigned long vid)
+{
+	port->default_pvid = vid;
+
+	return 0;
+}
+
+/* Must be protected by RTNL.
+ * Must be called with vid in range from 1 to 4094 inclusive.
+ * changed must be true only if the vlan was created or updated
+ */
 int nbp_vlan_add(struct net_bridge_port *port, u16 vid, u16 flags,
 		 bool *changed, struct netlink_ext_ack *extack)
 {

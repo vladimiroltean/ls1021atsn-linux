@@ -233,6 +233,7 @@ struct net_bridge_port {
 
 	unsigned long			flags;
 #ifdef CONFIG_BRIDGE_VLAN_FILTERING
+	u16				default_pvid;
 	struct net_bridge_vlan_group	__rcu *vlgrp;
 #endif
 	struct net_bridge_port		__rcu *backup_port;
@@ -888,6 +889,7 @@ int br_vlan_init(struct net_bridge *br);
 int br_vlan_set_default_pvid(struct net_bridge *br, unsigned long val);
 int __br_vlan_set_default_pvid(struct net_bridge *br, u16 pvid,
 			       struct netlink_ext_ack *extack);
+int nbp_vlan_set_default_pvid(struct net_bridge_port *port, unsigned long val);
 int nbp_vlan_add(struct net_bridge_port *port, u16 vid, u16 flags,
 		 bool *changed, struct netlink_ext_ack *extack);
 int nbp_vlan_delete(struct net_bridge_port *port, u16 vid);
@@ -997,6 +999,12 @@ static inline void br_recalculate_fwd_mask(struct net_bridge *br)
 }
 
 static inline int br_vlan_init(struct net_bridge *br)
+{
+	return 0;
+}
+
+static inline int nbp_vlan_set_default_pvid(struct net_bridge_port *port,
+					    unsigned long val)
 {
 	return 0;
 }
