@@ -574,5 +574,9 @@ int dsa_port_get_phy_strings(struct dsa_port *dp, uint8_t *data);
 int dsa_port_get_ethtool_phy_stats(struct dsa_port *dp, uint64_t *data);
 int dsa_port_get_phy_sset_count(struct dsa_port *dp);
 void dsa_port_phylink_mac_change(struct dsa_switch *ds, int port, bool up);
+#ifdef CONFIG_NET_DSA_TAG_8021Q
+int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int index,
+				 bool enabled);
+#endif
 
 #endif

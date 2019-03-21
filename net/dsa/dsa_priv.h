@@ -203,6 +203,16 @@ dsa_slave_to_master(const struct net_device *dev)
 int dsa_switch_register_notifier(struct dsa_switch *ds);
 void dsa_switch_unregister_notifier(struct dsa_switch *ds);
 
+/* tag_8021q.c */
+struct sk_buff *dsa_8021q_xmit(struct sk_buff *skb, struct net_device *netdev,
+			       u16 tpid, u16 tci);
+struct sk_buff *dsa_8021q_rcv(struct sk_buff *skb, struct net_device *netdev,
+			      struct packet_type *pt, u16 *tpid, u16 *tci);
+u16 dsa_tagging_tx_vid(struct dsa_switch *ds, int port);
+u16 dsa_tagging_rx_vid(struct dsa_switch *ds, int port);
+int dsa_tagging_rx_switch_id(u16 vid);
+int dsa_tagging_rx_source_port(u16 vid);
+
 /* tag_brcm.c */
 extern const struct dsa_device_ops brcm_netdev_ops;
 extern const struct dsa_device_ops brcm_prepend_netdev_ops;

@@ -5,6 +5,7 @@ dsa_core-y += dsa.o dsa2.o master.o port.o slave.o switch.o
 dsa_core-$(CONFIG_NET_DSA_LEGACY) += legacy.o
 
 # tagging formats
+dsa_core-$(CONFIG_NET_DSA_TAG_8021Q) += tag_8021q.o
 dsa_core-$(CONFIG_NET_DSA_TAG_BRCM) += tag_brcm.o
 dsa_core-$(CONFIG_NET_DSA_TAG_BRCM_PREPEND) += tag_brcm.o
 dsa_core-$(CONFIG_NET_DSA_TAG_DSA) += tag_dsa.o
