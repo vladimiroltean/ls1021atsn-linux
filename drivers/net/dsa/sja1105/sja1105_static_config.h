@@ -78,6 +78,27 @@ enum sja1105_blk_idx {
 #define SJA1105R_PART_NO			0x9A86
 #define SJA1105S_PART_NO			0x9A87
 
+#define IS_PQRS(device_id) \
+	(((device_id) == SJA1105PR_DEVICE_ID) || \
+	 ((device_id) == SJA1105QS_DEVICE_ID))
+#define IS_ET(device_id) \
+	(((device_id) == SJA1105E_DEVICE_ID) || \
+	 ((device_id) == SJA1105T_DEVICE_ID))
+/* P and R have same Device ID, and differ by Part Number */
+#define IS_P(device_id, part_nr) \
+	(((device_id) == SJA1105PR_DEVICE_ID) && \
+	 ((part_nr) == SJA1105P_PART_NR))
+#define IS_R(device_id, part_nr) \
+	(((device_id) == SJA1105PR_DEVICE_ID) && \
+	 ((part_nr) == SJA1105R_PART_NR))
+/* Same do Q and S */
+#define IS_Q(device_id, part_nr) \
+	(((device_id) == SJA1105QS_DEVICE_ID) && \
+	 ((part_nr) == SJA1105Q_PART_NR))
+#define IS_S(device_id, part_nr) \
+	(((device_id) == SJA1105QS_DEVICE_ID) && \
+	 ((part_nr) == SJA1105S_PART_NR))
+
 struct sja1105_general_params_entry {
 	u64 vllupformat;
 	u64 mirr_ptacu;
