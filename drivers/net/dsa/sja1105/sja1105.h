@@ -108,6 +108,12 @@ typedef enum {
 int sja1105_clocking_setup_port(struct sja1105_private *priv, int port);
 int sja1105_clocking_setup(struct sja1105_private *priv);
 
+/* From sja1105-ethtool.c */
+void sja1105_get_ethtool_stats(struct dsa_switch *ds, int port, u64 *data);
+void sja1105_get_strings(struct dsa_switch *ds, int port,
+			 u32 stringset, u8 *data);
+int sja1105_get_sset_count(struct dsa_switch *ds, int port, int sset);
+
 /* From sja1105-dynamic-config.c */
 
 int sja1105_dynamic_config_read(struct sja1105_private *priv,
