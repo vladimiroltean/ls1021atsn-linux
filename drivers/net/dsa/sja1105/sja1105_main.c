@@ -1097,6 +1097,21 @@ static int sja1105_vlan_apply(struct sja1105_private *priv, int port, u16 vid,
 	return 0;
 }
 
+static int sja1105_setup_8021q_tagging(struct dsa_switch *ds, bool enabled)
+{
+	int rc, i;
+
+	for (i = 0; i < SJA1105_NUM_PORTS; i++) {
+		rc = dsa_port_setup_8021q_tagging(ds, i, enabled);
+		if (rc < 0) {
+			dev_err(ds->dev, "Failed to setup VLAN tagging for port %d: %d\n",
+				i, rc);
+			return rc;
+		}
+	}
+	return 0;
+}
+
 static enum dsa_tag_protocol
 sja1105_get_tag_protocol(struct dsa_switch *ds, int port)
 {
@@ -1131,7 +1146,11 @@ static int sja1105_vlan_filtering(struct dsa_switch *ds, int port, bool enabled)
 	if (rc)
 		dev_err(ds->dev, "Failed to change VLAN Ethertype\n");
 
-	return rc;
+	/* Switch port identification based on 802.1Q is only passable
+	 * if we are not under a vlan_filtering bridge. So make sure
+	 * the two configurations are mutually exclusive.
+	 */
+	return sja1105_setup_8021q_tagging(ds, !enabled);
 }
 
 static void sja1105_vlan_add(struct dsa_switch *ds, int port,
@@ -1227,6 +1246,100 @@ static int sja1105_setup(struct dsa_switch *ds)
 	return 0;
 }
 
+#include "../../../net/dsa/dsa_priv.h"
+/* Deferred work is unfortunately necessary because setting up the management
+ * route cannot be done from atomit context (SPI transfer takes a sleepable
+ * lock on the bus)
+ */
+static void sja1105_xmit_work_handler(struct work_struct *work)
+{
+	struct sja1105_port *sp = container_of(work, struct sja1105_port,
+						xmit_work);
+	struct sja1105_private *priv = sp->dp->ds->priv;
+	struct net_device *slave = sp->dp->slave;
+	struct net_device *master = dsa_slave_to_master(slave);
+	int port = (uintptr_t)(sp - priv->ports);
+	struct sk_buff *skb;
+	int i, rc;
+
+	while ((i = sja1105_skb_ring_get(&sp->xmit_ring, &skb)) >= 0) {
+		struct sja1105_mgmt_entry mgmt_route = { 0 };
+		struct ethhdr *hdr;
+		int timeout = 10;
+		int skb_len;
+
+		skb_len = skb->len;
+		hdr = eth_hdr(skb);
+
+		mgmt_route.macaddr = ether_addr_to_u64(hdr->h_dest);
+		mgmt_route.destports = BIT(port);
+		mgmt_route.enfport = 1;
+		mgmt_route.tsreg = 0;
+		mgmt_route.takets = true;
+
+		rc = sja1105_dynamic_config_write(priv, BLK_IDX_MGMT_ROUTE,
+						  port, &mgmt_route, true);
+		if (rc < 0) {
+			kfree_skb(skb);
+			slave->stats.tx_dropped++;
+			continue;
+		}
+
+		/* Transfer skb to the host port. */
+		skb->dev = master;
+		dev_queue_xmit(skb);
+
+		/* Wait until the switch has processed the frame */
+		do {
+			rc = sja1105_dynamic_config_read(priv, BLK_IDX_MGMT_ROUTE,
+							 port, &mgmt_route);
+			if (rc < 0) {
+				slave->stats.tx_errors++;
+				dev_err(priv->ds->dev,
+					"xmit: failed to poll for mgmt route\n");
+				continue;
+			}
+
+			/* UM10944: The ENFPORT flag of the respective entry is
+			 * cleared when a match is found. The host can use this
+			 * flag as an acknowledgment.
+			 */
+			usleep_range(1000, 2000);
+		} while (mgmt_route.enfport && --timeout);
+
+		if (!timeout) {
+			dev_err(priv->ds->dev, "xmit timed out\n");
+			slave->stats.tx_errors++;
+			continue;
+		}
+
+		slave->stats.tx_packets++;
+		slave->stats.tx_bytes += skb_len;
+	}
+}
+
+static int sja1105_port_enable(struct dsa_switch *ds, int port,
+			       struct phy_device *phydev)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_port *sp = &priv->ports[port];
+
+	sp->dp = &ds->ports[port];
+	INIT_WORK(&sp->xmit_work, sja1105_xmit_work_handler);
+	return 0;
+}
+
+static void sja1105_port_disable(struct dsa_switch *ds, int port)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_port *sp = &priv->ports[port];
+	struct sk_buff *skb;
+
+	cancel_work_sync(&sp->xmit_work);
+	while (sja1105_skb_ring_get(&sp->xmit_ring, &skb) >= 0)
+		kfree_skb(skb);
+}
+
 static const struct dsa_switch_ops sja1105_switch_ops = {
 	.get_tag_protocol	= sja1105_get_tag_protocol,
 	.setup			= sja1105_setup,
@@ -1246,6 +1359,8 @@ static const struct dsa_switch_ops sja1105_switch_ops = {
 	.port_mdb_prepare	= sja1105_mdb_prepare,
 	.port_mdb_add		= sja1105_mdb_add,
 	.port_mdb_del		= sja1105_mdb_del,
+	.port_enable		= sja1105_port_enable,
+	.port_disable		= sja1105_port_disable,
 };
 
 static int sja1105_probe(struct spi_device *spi)

@@ -5,6 +5,7 @@
 #ifndef _SJA1105_H
 #define _SJA1105_H
 
+#include <linux/dsa/sja1105.h>
 #include <net/dsa.h>
 #include "sja1105_static_config.h"
 
@@ -18,6 +19,12 @@
 #define SJA1105_NUM_PORTS 5
 #define SJA1105_NUM_TC    8
 #define SJA1105ET_FDB_BIN_SIZE 4
+
+struct sja1105_port {
+	struct dsa_port *dp;
+	struct work_struct xmit_work;
+	struct sja1105_skb_ring xmit_ring;
+};
 
 /* Keeps the different addresses between E/T and P/Q/R/S */
 struct sja1105_regs {
@@ -50,6 +57,7 @@ struct sja1105_private {
 	struct dsa_switch *ds;
 	u64 device_id;
 	u64 part_nr; /* Needed for P/R distinction (same switch core) */
+	struct sja1105_port ports[SJA1105_NUM_PORTS];
 };
 
 #include "sja1105_dynamic_config.h"

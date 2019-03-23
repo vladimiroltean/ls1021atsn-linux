@@ -236,6 +236,9 @@ extern const struct dsa_device_ops lan9303_netdev_ops;
 /* tag_mtk.c */
 extern const struct dsa_device_ops mtk_netdev_ops;
 
+/* tag_sja1105.c */
+extern const struct dsa_device_ops sja1105_netdev_ops;
+
 /* tag_qca.c */
 extern const struct dsa_device_ops qca_netdev_ops;
 
