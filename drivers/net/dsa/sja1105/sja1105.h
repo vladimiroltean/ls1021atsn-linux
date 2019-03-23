@@ -5,15 +5,10 @@
 #ifndef _SJA1105_H
 #define _SJA1105_H
 
+#include <linux/dsa/sja1105.h>
 #include <net/dsa.h>
+#include <linux/mutex.h>
 #include "sja1105_static_config.h"
-
-/* IEEE 802.3 Annex 57A: Slow Protocols PDUs (01:80:C2:xx:xx:xx) */
-#define SJA1105_LINKLOCAL_FILTER_A	0x0180C2000000ull
-#define SJA1105_LINKLOCAL_FILTER_A_MASK	0xFFFFFF000000ull
-/* IEEE 1588 Annex F: Transport of PTP over Ethernet (01:1B:19:xx:xx:xx) */
-#define SJA1105_LINKLOCAL_FILTER_B	0x011B19000000ull
-#define SJA1105_LINKLOCAL_FILTER_B_MASK	0xFFFFFF000000ull
 
 #define SJA1105_NUM_PORTS		5
 #define SJA1105_NUM_TC			8
@@ -63,6 +58,8 @@ struct sja1105_private {
 	struct gpio_desc *reset_gpio;
 	struct spi_device *spidev;
 	struct dsa_switch *ds;
+	struct mutex mgmt_lock;
+	struct sja1105_port ports[SJA1105_NUM_PORTS];
 };
 
 #include "sja1105_dynamic_config.h"
