@@ -1,0 +1,123 @@
+NXP SJA1105 switch driver
+=========================
+
+Required properties:
+
+- compatible: Must be "nxp,sja1105". Device ID identification (one of
+  E/T/P/Q/R/S) is performed by driver at probe time. Swapping pin-compatible
+  parts is possible with no DTS change.
+
+Optional properties:
+
+- sja1105,mac-mode, sja1105,phy-mode: Boolean properties that can be assigned
+  under each port node that is MII or RMII (has no effect for RGMII).  By
+  default (unless otherwise specified) a port is configured as MAC if it is
+  driving a PHY (phy-handle is present) or as PHY if it is PHY-less (fixed-link
+  specified, presumably because it is connected to a MAC).  These properties
+  are required in the case where SJA1105 ports are at both ends of an MII/RMII
+  PHY-less setup. One end would need to have sja1105,mac-mode, while the other
+  sja1105,phy-mode.
+
+See Documentation/devicetree/bindings/net/dsa/dsa.txt for the list of standard
+DSA required and optional properties.
+
+Other observations:
+
+The SJA1105 SPI interface requires a CS-to-CLK time (t2 in UM10944) of at least
+one half of t_CLK. At an SPI frequency of 1MHz, this means a minimum
+cs_sck_delay of 500ns. Ensuring that this SPI timing requirement is observed
+depends on the SPI bus master driver.
+
+Example:
+
+Ethernet switch connected via SPI to the host, CPU port wired to eth0:
+
+arch/arm/boot/dts/ls1021a-tsn.dts:
+
+/* SPI controller of the LS1021 */
+&dspi0 {
+	sja1105@1 {
+		reg = <0x1>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "nxp,sja1105";
+		spi-max-frequency = <4000000>;
+		fsl,spi-cs-sck-delay = <1000>;
+		fsl,spi-sck-cs-delay = <1000>;
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			port@0 {
+				/* ETH5 written on chassis */
+				label = "swp5";
+				phy-handle = <&rgmii_phy6>;
+				phy-mode = "rgmii";
+				reg = <0>;
+				/* Implicit "sja1105,mac-mode;" */
+			};
+			port@1 {
+				/* ETH2 written on chassis */
+				label = "swp2";
+				phy-handle = <&rgmii_phy3>;
+				phy-mode = "rgmii";
+				reg = <1>;
+				/* Implicit "sja1105,mac-mode;" */
+			};
+			port@2 {
+				/* ETH3 written on chassis */
+				label = "swp3";
+				phy-handle = <&rgmii_phy4>;
+				phy-mode = "rgmii";
+				reg = <2>;
+				/* Implicit "sja1105,mac-mode;" */
+			};
+			port@3 {
+				/* ETH4 written on chassis */
+				phy-handle = <&rgmii_phy5>;
+				label = "swp4";
+				phy-mode = "rgmii";
+				reg = <3>;
+				/* Implicit "sja1105,mac-mode;" */
+			};
+			port@4 {
+				/* Internal port connected to eth2 */
+				ethernet = <&enet2>;
+				phy-mode = "rgmii";
+				reg = <4>;
+				/* Implicit "sja1105,phy-mode;" */
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+				};
+			};
+		};
+	};
+};
+
+/* MDIO controller of the LS1021 */
+&mdio0 {
+	/* BCM5464 */
+	rgmii_phy3: ethernet-phy@3 {
+		reg = <0x3>;
+	};
+	rgmii_phy4: ethernet-phy@4 {
+		reg = <0x4>;
+	};
+	rgmii_phy5: ethernet-phy@5 {
+		reg = <0x5>;
+	};
+	rgmii_phy6: ethernet-phy@6 {
+		reg = <0x6>;
+	};
+};
+
+/* Ethernet master port of the LS1021 */
+&enet2 {
+	phy-connection-type = "rgmii";
+	status = "ok";
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+	};
+};
+
