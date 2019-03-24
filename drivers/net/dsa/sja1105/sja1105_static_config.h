@@ -61,7 +61,9 @@ enum {
 	BLKID_RETAGGING				= 0x12,
 	BLKID_SGMII				= 0xC8,
 	BLKID_XMII_PARAMS			= 0x4E,
+	__BLKID_MAX,
 };
+#define BLKID_MAX				(__BLKID_MAX - 1)
 
 enum sja1105_blk_idx {
 	BLK_IDX_SCHEDULE = 0,
@@ -148,6 +150,8 @@ enum sja1105_blk_idx {
 #define IS_S(device_id, part_no) \
 	(((device_id) == SJA1105QS_DEVICE_ID) && \
 	 ((part_no) == SJA1105S_PART_NO))
+#define DEVICE_ID_VALID(device_id) \
+	(IS_ET(device_id) || IS_PQRS(device_id))
 #define SUPPORTS_TTETHERNET(device_id) \
 	(((device_id) == SJA1105T_DEVICE_ID) || \
 	 ((device_id) == SJA1105QS_DEVICE_ID))
@@ -467,7 +471,15 @@ typedef enum {
 	SJA1105_MISSING_VLAN_TABLE,
 	SJA1105_MISSING_XMII_TABLE,
 	SJA1105_MISSING_MAC_TABLE,
+	SJA1105_DEVICE_ID_INVALID,
 	SJA1105_OVERCOMMITTED_FRAME_MEMORY,
+	SJA1105_UNEXPECTED_END_OF_BUFFER,
+	SJA1105_INVALID_DEVICE_ID,
+	SJA1105_INVALID_TABLE_HEADER_CRC,
+	SJA1105_INVALID_TABLE_HEADER,
+	SJA1105_INCORRECT_TABLE_LENGTH,
+	SJA1105_DATA_CRC_INVALID,
+	SJA1105_EXTRA_BYTES_AT_END_OF_BUFFER,
 } sja1105_config_valid_t;
 
 extern const char *sja1105_static_config_error_msg[];
