@@ -615,7 +615,7 @@ int sja1105_clocking_setup_port(struct sja1105_private *priv, int port)
 	struct device *dev = priv->ds->dev;
 	sja1105_phy_interface_t phy_mode;
 	sja1105_mii_mode_t mode;
-	int rc;
+	int rc = 0;
 
 	mii = priv->static_config.tables[BLK_IDX_XMII_PARAMS].entries;
 
