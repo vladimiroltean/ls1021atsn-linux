@@ -10,6 +10,7 @@
  * (at your option) any later version.
  */
 
+#include <linux/if_bridge.h>
 #include <linux/netdevice.h>
 #include <linux/notifier.h>
 #include <linux/if_vlan.h>
