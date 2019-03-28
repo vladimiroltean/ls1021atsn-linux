@@ -718,20 +718,26 @@ static int port_vlans_add(struct net_device *netdev,
 			  struct switchdev_trans *trans)
 {
 	struct ethsw_port_priv *port_priv = netdev_priv(netdev);
-	int err = 0;
+	int vid, err = 0;
 
 	if (switchdev_trans_ph_prepare(trans))
 		return 0;
 
-	if (!port_priv->ethsw_data->vlans[vlan->vid]) {
-		/* this is a new VLAN */
-		err = ethsw_add_vlan(port_priv->ethsw_data, vlan->vid);
-		if (err)
-			return err;
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++) {
+		if (!port_priv->ethsw_data->vlans[vid]) {
+			/* this is a new VLAN */
+			err = ethsw_add_vlan(port_priv->ethsw_data, vid);
+			if (err)
+				return err;
 
-		port_priv->ethsw_data->vlans[vlan->vid] |= ETHSW_VLAN_GLOBAL;
+			port_priv->ethsw_data->vlans[vid] |= ETHSW_VLAN_GLOBAL;
+		}
+		err = ethsw_port_add_vlan(port_priv, vid, vlan->flags);
+		if (err)
+			break;
 	}
-	return ethsw_port_add_vlan(port_priv, vlan->vid, vlan->flags);
+
+	return err;
 }
 
 static int port_lookup_address(struct net_device *netdev, int is_uc,
@@ -864,12 +870,18 @@ static int port_vlans_del(struct net_device *netdev,
 			  const struct switchdev_obj_port_vlan *vlan)
 {
 	struct ethsw_port_priv *port_priv = netdev_priv(netdev);
-	int err = 0;
+	int vid, err = 0;
 
 	if (netif_is_bridge_master(vlan->obj.orig_dev))
 		return -EOPNOTSUPP;
 
-	return ethsw_port_del_vlan(port_priv, vlan->vid);
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++) {
+		err = ethsw_port_del_vlan(port_priv, vid);
+		if (err)
+			break;
+	}
+
+	return err;
 }
 
 static int port_mdb_del(struct net_device *netdev,
