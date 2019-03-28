@@ -1337,24 +1337,21 @@ static void sja1105_vlan_add(struct dsa_switch *ds, int port,
 			     const struct switchdev_obj_port_vlan *vlan)
 {
 	struct sja1105_private *priv = ds->priv;
-	u16 vid;
 	int rc;
 
-	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++) {
-		rc = sja1105_vlan_apply(priv, port, vid, true, vlan->flags &
-					BRIDGE_VLAN_INFO_UNTAGGED);
+	rc = sja1105_vlan_apply(priv, port, vlan->vid, true, vlan->flags &
+				BRIDGE_VLAN_INFO_UNTAGGED);
+	if (rc < 0) {
+		dev_err(ds->dev, "Failed to add VLAN %d to port %d: %d\n",
+			vlan->vid, port, rc);
+		return;
+	}
+	if (vlan->flags & BRIDGE_VLAN_INFO_PVID) {
+		rc = sja1105_pvid_apply(ds->priv, port, vlan->vid);
 		if (rc < 0) {
-			dev_err(ds->dev, "Failed to add VLAN %d to port %d: %d\n",
-				vid, port, rc);
+			dev_err(ds->dev, "Failed to set pvid %d on port %d: %d\n",
+				vlan->vid, port, rc);
 			return;
-		}
-		if (vlan->flags & BRIDGE_VLAN_INFO_PVID) {
-			rc = sja1105_pvid_apply(ds->priv, port, vid);
-			if (rc < 0) {
-				dev_err(ds->dev, "Failed to set pvid %d on port %d: %d\n",
-					vid, port, rc);
-				return;
-			}
 		}
 	}
 }
@@ -1363,19 +1360,9 @@ static int sja1105_vlan_del(struct dsa_switch *ds, int port,
 			    const struct switchdev_obj_port_vlan *vlan)
 {
 	struct sja1105_private *priv = ds->priv;
-	u16 vid;
-	int rc;
 
-	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++) {
-		rc = sja1105_vlan_apply(priv, port, vid, false, vlan->flags &
-					BRIDGE_VLAN_INFO_UNTAGGED);
-		if (rc < 0) {
-			dev_err(ds->dev, "Failed to remove VLAN %d from port %d: %d\n",
-				vid, port, rc);
-			return rc;
-		}
-	}
-	return 0;
+	return sja1105_vlan_apply(priv, port, vlan->vid, false, vlan->flags &
+				  BRIDGE_VLAN_INFO_UNTAGGED);
 }
 
 /* The programming model for the SJA1105 switch is "all-at-once" via static

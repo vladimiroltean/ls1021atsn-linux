@@ -203,12 +203,9 @@ static int dsa_port_vlan_device_check(struct net_device *vlan_dev,
 				      void *arg)
 {
 	struct switchdev_obj_port_vlan *vlan = arg;
-	u16 vid;
 
-	for (vid = vlan->vid_begin; vid <= vlan->vid_end; ++vid) {
-		if (vid == vlan_dev_vid)
-			return -EBUSY;
-	}
+	if (vlan->vid == vlan_dev_vid)
+		return -EBUSY;
 
 	return 0;
 }

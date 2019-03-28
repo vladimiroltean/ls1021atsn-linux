@@ -1110,7 +1110,6 @@ mlxsw_sp_br_ban_rif_pvid_change(struct mlxsw_sp *mlxsw_sp,
 	struct mlxsw_sp_rif *rif;
 	struct mlxsw_sp_fid *fid;
 	u16 pvid;
-	u16 vid;
 
 	rif = mlxsw_sp_rif_find_by_dev(mlxsw_sp, br_dev);
 	if (!rif)
@@ -1118,17 +1117,15 @@ mlxsw_sp_br_ban_rif_pvid_change(struct mlxsw_sp *mlxsw_sp,
 	fid = mlxsw_sp_rif_fid(rif);
 	pvid = mlxsw_sp_fid_8021q_vid(fid);
 
-	for (vid = vlan->vid_begin; vid <= vlan->vid_end; ++vid) {
-		if (vlan->flags & BRIDGE_VLAN_INFO_PVID) {
-			if (vid != pvid) {
-				netdev_err(br_dev, "Can't change PVID, it's used by router interface\n");
-				return -EBUSY;
-			}
-		} else {
-			if (vid == pvid) {
-				netdev_err(br_dev, "Can't remove PVID, it's used by router interface\n");
-				return -EBUSY;
-			}
+	if (vlan->flags & BRIDGE_VLAN_INFO_PVID) {
+		if (vlan->vid != pvid) {
+			netdev_err(br_dev, "Can't change PVID, it's used by router interface\n");
+			return -EBUSY;
+		}
+	} else {
+		if (vlan->vid == pvid) {
+			netdev_err(br_dev, "Can't remove PVID, it's used by router interface\n");
+			return -EBUSY;
 		}
 	}
 
@@ -1145,7 +1142,7 @@ static int mlxsw_sp_port_vlans_add(struct mlxsw_sp_port *mlxsw_sp_port,
 	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
 	struct net_device *orig_dev = vlan->obj.orig_dev;
 	struct mlxsw_sp_bridge_port *bridge_port;
-	u16 vid;
+	int err;
 
 	if (netif_is_bridge_master(orig_dev)) {
 		int err = 0;
@@ -1170,17 +1167,9 @@ static int mlxsw_sp_port_vlans_add(struct mlxsw_sp_port *mlxsw_sp_port,
 	if (!bridge_port->bridge_device->vlan_enabled)
 		return 0;
 
-	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++) {
-		int err;
-
-		err = mlxsw_sp_bridge_port_vlan_add(mlxsw_sp_port, bridge_port,
-						    vid, flag_untagged,
-						    flag_pvid, extack);
-		if (err)
-			return err;
-	}
-
-	return 0;
+	return mlxsw_sp_bridge_port_vlan_add(mlxsw_sp_port, bridge_port,
+					     vlan->vid, flag_untagged,
+					     flag_pvid, extack);
 }
 
 static enum mlxsw_reg_sfdf_flush_type mlxsw_sp_fdb_flush_type(bool lagged)
@@ -1814,8 +1803,7 @@ static int mlxsw_sp_port_vlans_del(struct mlxsw_sp_port *mlxsw_sp_port,
 	if (!bridge_port->bridge_device->vlan_enabled)
 		return 0;
 
-	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++)
-		mlxsw_sp_bridge_port_vlan_del(mlxsw_sp_port, bridge_port, vid);
+	mlxsw_sp_bridge_port_vlan_del(mlxsw_sp_port, bridge_port, vlan->vid);
 
 	return 0;
 }
