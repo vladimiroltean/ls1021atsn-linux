@@ -1164,15 +1164,34 @@ static int ocelot_port_obj_add_vlan(struct net_device *dev,
 				    const struct switchdev_obj_port_vlan *vlan,
 				    struct switchdev_trans *trans)
 {
-	return ocelot_vlan_vid_add(dev, vlan->vid,
-				   vlan->flags & BRIDGE_VLAN_INFO_PVID,
-				   vlan->flags & BRIDGE_VLAN_INFO_UNTAGGED);
+	int ret;
+	u16 vid;
+
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++) {
+		ret = ocelot_vlan_vid_add(dev, vid,
+					  vlan->flags & BRIDGE_VLAN_INFO_PVID,
+					  vlan->flags & BRIDGE_VLAN_INFO_UNTAGGED);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
 
 static int ocelot_port_vlan_del_vlan(struct net_device *dev,
 				     const struct switchdev_obj_port_vlan *vlan)
 {
-	return ocelot_vlan_vid_del(dev, vlan->vid);
+	int ret;
+	u16 vid;
+
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++) {
+		ret = ocelot_vlan_vid_del(dev, vid);
+
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
 
 static struct ocelot_multicast *ocelot_multicast_get(struct ocelot *ocelot,

@@ -1425,11 +1425,11 @@ static int mv88e6xxx_vtu_get(struct mv88e6xxx_chip *chip, u16 vid,
 }
 
 static int mv88e6xxx_port_check_hw_vlan(struct dsa_switch *ds, int port,
-					u16 vid)
+					u16 vid_begin, u16 vid_end)
 {
 	struct mv88e6xxx_chip *chip = ds->priv;
 	struct mv88e6xxx_vtu_entry vlan = {
-		.vid = vid - 1,
+		.vid = vid_begin - 1,
 	};
 	int i, err;
 
@@ -1437,7 +1437,7 @@ static int mv88e6xxx_port_check_hw_vlan(struct dsa_switch *ds, int port,
 	if (dsa_is_dsa_port(ds, port) || dsa_is_cpu_port(ds, port))
 		return 0;
 
-	if (!vid)
+	if (!vid_begin)
 		return -EOPNOTSUPP;
 
 	mutex_lock(&chip->reg_lock);
@@ -1516,7 +1516,8 @@ mv88e6xxx_port_vlan_prepare(struct dsa_switch *ds, int port,
 	/* If the requested port doesn't belong to the same bridge as the VLAN
 	 * members, do not support it (yet) and fallback to software VLAN.
 	 */
-	err = mv88e6xxx_port_check_hw_vlan(ds, port, vlan->vid);
+	err = mv88e6xxx_port_check_hw_vlan(ds, port, vlan->vid_begin,
+					   vlan->vid_end);
 	if (err)
 		return err;
 
@@ -1633,13 +1634,14 @@ static void mv88e6xxx_port_vlan_add(struct dsa_switch *ds, int port,
 
 	mutex_lock(&chip->reg_lock);
 
-	if (_mv88e6xxx_port_vlan_add(chip, port, vlan->vid, member))
-		dev_err(ds->dev, "p%d: failed to add VLAN %d%c\n", port,
-			vid, untagged ? 'u' : 't');
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; ++vid)
+		if (_mv88e6xxx_port_vlan_add(chip, port, vid, member))
+			dev_err(ds->dev, "p%d: failed to add VLAN %d%c\n", port,
+				vid, untagged ? 'u' : 't');
 
-	if (pvid && mv88e6xxx_port_set_pvid(chip, port, vlan->vid))
+	if (pvid && mv88e6xxx_port_set_pvid(chip, port, vlan->vid_end))
 		dev_err(ds->dev, "p%d: failed to set PVID %d\n", port,
-			vlan->vid);
+			vlan->vid_end);
 
 	mutex_unlock(&chip->reg_lock);
 }
@@ -1693,14 +1695,16 @@ static int mv88e6xxx_port_vlan_del(struct dsa_switch *ds, int port,
 	if (err)
 		goto unlock;
 
-	err = _mv88e6xxx_port_vlan_del(chip, port, vlan->vid);
-	if (err)
-		goto unlock;
-
-	if (vlan->vid == pvid) {
-		err = mv88e6xxx_port_set_pvid(chip, port, 0);
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; ++vid) {
+		err = _mv88e6xxx_port_vlan_del(chip, port, vid);
 		if (err)
 			goto unlock;
+
+		if (vid == pvid) {
+			err = mv88e6xxx_port_set_pvid(chip, port, 0);
+			if (err)
+				goto unlock;
+		}
 	}
 
 unlock:
