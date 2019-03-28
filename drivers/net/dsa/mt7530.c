@@ -1128,6 +1128,7 @@ mt7530_port_vlan_add(struct dsa_switch *ds, int port,
 	bool pvid = vlan->flags & BRIDGE_VLAN_INFO_PVID;
 	struct mt7530_hw_vlan_entry new_entry;
 	struct mt7530_priv *priv = ds->priv;
+	u16 vid;
 
 	/* The port is kept as VLAN-unaware if bridge with vlan_filtering not
 	 * being set.
@@ -1137,14 +1138,16 @@ mt7530_port_vlan_add(struct dsa_switch *ds, int port,
 
 	mutex_lock(&priv->reg_mutex);
 
-	mt7530_hw_vlan_entry_init(&new_entry, port, untagged);
-	mt7530_hw_vlan_update(priv, vlan->vid, &new_entry,
-			      mt7530_hw_vlan_add);
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; ++vid) {
+		mt7530_hw_vlan_entry_init(&new_entry, port, untagged);
+		mt7530_hw_vlan_update(priv, vid, &new_entry,
+				      mt7530_hw_vlan_add);
+	}
 
 	if (pvid) {
 		mt7530_rmw(priv, MT7530_PPBV1_P(port), G0_PORT_VID_MASK,
-			   G0_PORT_VID(vlan->vid));
-		priv->ports[port].pvid = vlan->vid;
+			   G0_PORT_VID(vlan->vid_end));
+		priv->ports[port].pvid = vlan->vid_end;
 	}
 
 	mutex_unlock(&priv->reg_mutex);
@@ -1156,7 +1159,7 @@ mt7530_port_vlan_del(struct dsa_switch *ds, int port,
 {
 	struct mt7530_hw_vlan_entry target_entry;
 	struct mt7530_priv *priv = ds->priv;
-	u16 pvid;
+	u16 vid, pvid;
 
 	/* The port is kept as VLAN-unaware if bridge with vlan_filtering not
 	 * being set.
@@ -1167,15 +1170,17 @@ mt7530_port_vlan_del(struct dsa_switch *ds, int port,
 	mutex_lock(&priv->reg_mutex);
 
 	pvid = priv->ports[port].pvid;
-	mt7530_hw_vlan_entry_init(&target_entry, port, 0);
-	mt7530_hw_vlan_update(priv, vlan->vid, &target_entry,
-			      mt7530_hw_vlan_del);
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; ++vid) {
+		mt7530_hw_vlan_entry_init(&target_entry, port, 0);
+		mt7530_hw_vlan_update(priv, vid, &target_entry,
+				      mt7530_hw_vlan_del);
 
-	/* PVID is being restored to the default whenever the PVID port
-	 * is being removed from the VLAN.
-	 */
-	if (pvid == vlan->vid)
-		pvid = G0_PORT_VID_DEF;
+		/* PVID is being restored to the default whenever the PVID port
+		 * is being removed from the VLAN.
+		 */
+		if (pvid == vid)
+			pvid = G0_PORT_VID_DEF;
+	}
 
 	mt7530_rmw(priv, MT7530_PPBV1_P(port), G0_PORT_VID_MASK, pvid);
 	priv->ports[port].pvid = pvid;
