@@ -81,7 +81,8 @@ struct switchdev_obj {
 struct switchdev_obj_port_vlan {
 	struct switchdev_obj obj;
 	u16 flags;
-	u16 vid;
+	u16 vid_begin;
+	u16 vid_end;
 };
 
 #define SWITCHDEV_OBJ_PORT_VLAN(OBJ) \
