@@ -11,6 +11,7 @@
 #include <linux/spi/spi.h>
 #include <linux/errno.h>
 #include <linux/gpio/consumer.h>
+#include <linux/phylink.h>
 #include <linux/of.h>
 #include <linux/of_net.h>
 #include <linux/of_mdio.h>
@@ -747,6 +748,35 @@ static void sja1105_adjust_link(struct dsa_switch *ds, int port,
 		sja1105_adjust_port_config(priv, port, phydev->speed, true);
 }
 
+static void sja1105_phylink_validate(struct dsa_switch *ds, int port,
+				     unsigned long *supported,
+				     struct phylink_link_state *state)
+{
+	/* Construct a new mask which exhaustively contains all link features
+	 * supported by the MAC, and then apply that (logical AND) to what will
+	 * be sent to the PHY for "marketing".
+	 */
+	__ETHTOOL_DECLARE_LINK_MODE_MASK(mask) = { 0, };
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_xmii_params_entry *mii;
+
+	mii = priv->static_config.tables[BLK_IDX_XMII_PARAMS].entries;
+
+	/* The MAC does not support pause frames, and also doesn't
+	 * support half-duplex traffic modes.
+	 */
+	phylink_set(mask, Autoneg);
+	phylink_set(mask, MII);
+	phylink_set(mask, 10baseT_Full);
+	phylink_set(mask, 100baseT_Full);
+	if (mii->xmii_mode[port] == XMII_MODE_RGMII)
+		phylink_set(mask, 1000baseT_Full);
+
+	bitmap_and(supported, supported, mask, __ETHTOOL_LINK_MODE_MASK_NBITS);
+	bitmap_and(state->advertising, state->advertising, mask,
+		   __ETHTOOL_LINK_MODE_MASK_NBITS);
+}
+
 #define fdb(bin, index) \
 	((bin) * SJA1105ET_FDB_BIN_SIZE + (index))
 #define is_bin_index_valid(i) \
@@ -1478,6 +1508,7 @@ static const struct dsa_switch_ops sja1105_switch_ops = {
 	.get_tag_protocol	= sja1105_get_tag_protocol,
 	.setup			= sja1105_setup,
 	.adjust_link		= sja1105_adjust_link,
+	.phylink_validate	= sja1105_phylink_validate,
 	.get_strings		= sja1105_get_strings,
 	.get_ethtool_stats	= sja1105_get_ethtool_stats,
 	.get_sset_count		= sja1105_get_sset_count,
