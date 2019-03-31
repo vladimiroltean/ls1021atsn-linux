@@ -504,6 +504,11 @@ struct sja1105_regs sja1105et_regs = {
 	.rgmii_tx_clk = {0x100016, 0x10001D, 0x100024, 0x10002B, 0x100032},
 	.rmii_ref_clk = {0x100015, 0x10001C, 0x100023, 0x10002A, 0x100031},
 	.rmii_ext_tx_clk = {0x100018, 0x10001F, 0x100026, 0x10002D, 0x100034},
+	.ptpegr_ts = 0xC0,
+	.ptp_control = 0x17,
+	.ptpclk = 0x18,
+	.ptpclkrate = 0x1A,
+	.ptptsclk = 0x1B,
 };
 
 struct sja1105_regs sja1105pqrs_regs = {
@@ -530,6 +535,11 @@ struct sja1105_regs sja1105pqrs_regs = {
 	.rmii_ref_clk = {0x100015, 0x10001B, 0x100021, 0x100027, 0x10002D},
 	.rmii_ext_tx_clk = {0x100017, 0x10001D, 0x100023, 0x100029, 0x10002F},
 	.qlevel = {0x604, 0x614, 0x624, 0x634, 0x644},
+	.ptpegr_ts = 0xC0,
+	.ptp_control = 0x18,
+	.ptpclk = 0x19,
+	.ptpclkrate = 0x1B,
+	.ptptsclk = 0x1C,
 };
 
 struct sja1105_info sja1105e_info = {
@@ -539,6 +549,7 @@ struct sja1105_info sja1105e_info = {
 	.dyn_ops		= sja1105et_dyn_ops,
 	.setup_rgmii_delay	= NULL,
 	.reset_cmd		= sja1105et_reset_cmd,
+	.ptp_cmd		= sja1105et_ptp_cmd,
 	.regs			= &sja1105et_regs,
 	.name			= "SJA1105E",
 };
@@ -549,6 +560,7 @@ struct sja1105_info sja1105t_info = {
 	.dyn_ops		= sja1105et_dyn_ops,
 	.setup_rgmii_delay	= NULL,
 	.reset_cmd		= sja1105et_reset_cmd,
+	.ptp_cmd		= sja1105et_ptp_cmd,
 	.regs			= &sja1105et_regs,
 	.name			= "SJA1105T",
 };
@@ -559,6 +571,7 @@ struct sja1105_info sja1105p_info = {
 	.dyn_ops		= sja1105pqrs_dyn_ops,
 	.setup_rgmii_delay	= NULL,
 	.reset_cmd		= sja1105pqrs_reset_cmd,
+	.ptp_cmd		= sja1105pqrs_ptp_cmd,
 	.regs			= &sja1105pqrs_regs,
 	.name			= "SJA1105P",
 };
@@ -569,6 +582,7 @@ struct sja1105_info sja1105q_info = {
 	.dyn_ops		= sja1105pqrs_dyn_ops,
 	.setup_rgmii_delay	= NULL,
 	.reset_cmd		= sja1105pqrs_reset_cmd,
+	.ptp_cmd		= sja1105pqrs_ptp_cmd,
 	.regs			= &sja1105pqrs_regs,
 	.name			= "SJA1105Q",
 };
@@ -579,6 +593,7 @@ struct sja1105_info sja1105r_info = {
 	.dyn_ops		= sja1105pqrs_dyn_ops,
 	.setup_rgmii_delay	= NULL,
 	.reset_cmd		= sja1105pqrs_reset_cmd,
+	.ptp_cmd		= sja1105pqrs_ptp_cmd,
 	.regs			= &sja1105pqrs_regs,
 	.name			= "SJA1105R",
 };
@@ -590,6 +605,7 @@ struct sja1105_info sja1105s_info = {
 	.regs			= &sja1105pqrs_regs,
 	.setup_rgmii_delay	= NULL,
 	.reset_cmd		= sja1105pqrs_reset_cmd,
+	.ptp_cmd		= sja1105pqrs_ptp_cmd,
 	.name			= "SJA1105S",
 };
 

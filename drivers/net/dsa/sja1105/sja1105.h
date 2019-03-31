@@ -5,6 +5,7 @@
 #ifndef _SJA1105_H
 #define _SJA1105_H
 
+#include <linux/ptp_clock_kernel.h>
 #include <linux/dsa/sja1105.h>
 #include <net/dsa.h>
 #include <linux/mutex.h>
@@ -13,6 +14,11 @@
 #define SJA1105_NUM_PORTS		5
 #define SJA1105_NUM_TC			8
 #define SJA1105ET_FDB_BIN_SIZE		4
+
+enum sja1105_ptp_clk_mode {
+	PTP_SET_MODE = 0,
+	PTP_ADD_MODE,
+};
 
 /* Keeps the different addresses between E/T and P/Q/R/S */
 struct sja1105_regs {
@@ -23,6 +29,11 @@ struct sja1105_regs {
 	u64 rgu;
 	u64 config;
 	u64 rmii_pll1;
+	u64 ptp_control;
+	u64 ptpclk;
+	u64 ptpclkrate;
+	u64 ptptsclk;
+	u64 ptpegr_ts;
 	u64 pad_mii_tx[SJA1105_NUM_PORTS];
 	u64 cgu_idiv[SJA1105_NUM_PORTS];
 	u64 rgmii_pad_mii_tx[SJA1105_NUM_PORTS];
@@ -49,6 +60,7 @@ struct sja1105_info {
 	const struct sja1105_dynamic_table_ops *dyn_ops;
 	const struct sja1105_table_ops *static_ops;
 	const struct sja1105_regs *regs;
+	int (*ptp_cmd)(const void *ctx, const void *data);
 	int (*reset_cmd)(const void *ctx, const void *data);
 	int (*setup_rgmii_delay)(const void *ctx, int port, bool rx, bool tx);
 	const char *name;
@@ -62,6 +74,9 @@ struct sja1105_private {
 	struct dsa_switch *ds;
 	struct mutex mgmt_lock;
 	struct sja1105_port ports[SJA1105_NUM_PORTS];
+	struct ptp_clock *clock;
+	struct ptp_clock_info ptp_caps;
+	enum sja1105_ptp_clk_mode ptp_mode;
 };
 
 #include "sja1105_dynamic_config.h"
@@ -124,6 +139,8 @@ void sja1105_get_ethtool_stats(struct dsa_switch *ds, int port, u64 *data);
 void sja1105_get_strings(struct dsa_switch *ds, int port,
 			 u32 stringset, u8 *data);
 int sja1105_get_sset_count(struct dsa_switch *ds, int port, int sset);
+int sja1105_get_ts_info(struct dsa_switch *ds, int port,
+			struct ethtool_ts_info *ts);
 
 /* From sja1105_dynamic_config.c */
 int sja1105_dynamic_config_read(struct sja1105_private *priv,
@@ -134,6 +151,13 @@ int sja1105_dynamic_config_write(struct sja1105_private *priv,
 				 int index, void *entry, bool keep);
 
 u8 sja1105_fdb_hash(struct sja1105_private *priv, const u8 *addr, u16 vid);
+
+/* From sja1105-ptp.c */
+int  sja1105_ptp_clock_register(struct sja1105_private *priv);
+void sja1105_ptp_clock_unregister(struct sja1105_private *priv);
+
+int sja1105et_ptp_cmd(const void *ctx, const void *data);
+int sja1105pqrs_ptp_cmd(const void *ctx, const void *data);
 
 /* Common implementations for the static and dynamic configs */
 size_t sja1105_l2_forwarding_entry_packing(void *buf, void *entry_ptr,
