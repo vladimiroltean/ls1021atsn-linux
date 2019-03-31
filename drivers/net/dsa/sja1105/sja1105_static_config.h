@@ -22,6 +22,7 @@
 #define SIZE_GENERAL_PARAMS_ENTRY_ET            40
 #define SIZE_GENERAL_PARAMS_ENTRY_PQRS          44
 #define SIZE_XMII_PARAMS_ENTRY                  4
+#define SIZE_SGMII_ENTRY                        144
 
 /* UM10944.pdf Page 11, Table 2. Configuration Blocks */
 #define BLKID_L2_LOOKUP                    0x05
@@ -33,7 +34,8 @@
 #define BLKID_L2_FORWARDING_PARAMS         0x0E
 #define BLKID_GENERAL_PARAMS               0x11
 #define BLKID_XMII_PARAMS                  0x4E
-#define BLKID_MAX                          BLKID_XMII_PARAMS
+#define BLKID_SGMII                        0xC8
+#define BLKID_MAX                          BLKID_SGMII
 
 enum sja1105_blk_idx {
 	BLK_IDX_L2_LOOKUP = 0,
@@ -45,6 +47,7 @@ enum sja1105_blk_idx {
 	BLK_IDX_L2_FORWARDING_PARAMS,
 	BLK_IDX_GENERAL_PARAMS,
 	BLK_IDX_XMII_PARAMS,
+	BLK_IDX_SGMII,
 	BLK_IDX_MAX,
 	/* Fake block indices that are only valid for dynamic access */
 	BLK_IDX_MGMT_ROUTE,
@@ -61,6 +64,7 @@ enum sja1105_blk_idx {
 #define MAX_L2_FORWARDING_PARAMS_COUNT           1
 #define MAX_GENERAL_PARAMS_COUNT                 1
 #define MAX_XMII_PARAMS_COUNT                    1
+#define MAX_SGMII_COUNT                          1
 
 #define MAX_FRAME_MEMORY                         929
 #define MAX_FRAME_MEMORY_RETAGGING               910
@@ -235,6 +239,17 @@ struct sja1105_avb_params_entry {
 	u64 cas_master; /* only on P/Q/R/S */
 	u64 destmeta;
 	u64 srcmeta;
+};
+
+struct sja1105_sgmii_entry {
+	u64 digital_error_cnt;
+	u64 digital_control_2;
+	u64 debug_control;
+	u64 test_control;
+	u64 autoneg_control;
+	u64 digital_control_1;
+	u64 autoneg_adv;
+	u64 basic_control;
 };
 
 struct sja1105_table_header {
