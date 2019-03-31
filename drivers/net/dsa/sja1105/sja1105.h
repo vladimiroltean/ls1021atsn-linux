@@ -5,6 +5,7 @@
 #ifndef _SJA1105_H
 #define _SJA1105_H
 
+#include <linux/ptp_clock_kernel.h>
 #include <linux/dsa/sja1105.h>
 #include <net/dsa.h>
 #include "sja1105_static_config.h"
@@ -20,6 +21,11 @@
 #define SJA1105_NUM_TC    8
 #define SJA1105ET_FDB_BIN_SIZE 4
 
+enum sja1105_ptp_clk_add_mode {
+	PTP_SET_MODE = 0,
+	PTP_ADD_MODE,
+};
+
 struct sja1105_port {
 	struct dsa_port *dp;
 	struct work_struct xmit_work;
@@ -32,6 +38,11 @@ struct sja1105_regs {
 	u64 rgu;
 	u64 config;
 	u64 rmii_pll1;
+	u64 ptp_control;
+	u64 ptpclk;
+	u64 ptpclkrate;
+	u64 ptptsclk;
+	u64 ptpegr_ts;
 	u64 pad_mii_tx[SJA1105_NUM_PORTS];
 	u64 cgu_idiv[SJA1105_NUM_PORTS];
 	u64 rgmii_pad_mii_tx[SJA1105_NUM_PORTS];
@@ -46,6 +57,8 @@ struct sja1105_regs {
 	u64 mac_hl1[SJA1105_NUM_PORTS];
 	u64 mac_hl2[SJA1105_NUM_PORTS];
 	u64 qlevel[SJA1105_NUM_PORTS];
+	/* E/T and P/Q/R/S have egress timestamps of different sizes */
+	u64 ptpegr_ts_mask;
 };
 
 struct sja1105_private {
@@ -58,6 +71,9 @@ struct sja1105_private {
 	u64 device_id;
 	u64 part_nr; /* Needed for P/R distinction (same switch core) */
 	struct sja1105_port ports[SJA1105_NUM_PORTS];
+	struct ptp_clock *clock;
+	struct ptp_clock_info ptp_caps;
+	enum sja1105_ptp_clk_add_mode ptp_add_mode;
 };
 
 #include "sja1105_dynamic_config.h"
@@ -122,6 +138,8 @@ void sja1105_get_ethtool_stats(struct dsa_switch *ds, int port, u64 *data);
 void sja1105_get_strings(struct dsa_switch *ds, int port,
 			 u32 stringset, u8 *data);
 int sja1105_get_sset_count(struct dsa_switch *ds, int port, int sset);
+int sja1105_get_ts_info(struct dsa_switch *ds, int port,
+			struct ethtool_ts_info *ts);
 
 /* From sja1105-dynamic-config.c */
 
@@ -134,6 +152,10 @@ int sja1105_dynamic_config_write(struct sja1105_private *priv,
 void sja1105_dynamic_config_init(struct sja1105_private *priv);
 
 u8 sja1105_fdb_hash(struct sja1105_private *priv, const u8 *addr, u16 vid);
+
+/* From sja1105-ptp.c */
+int  sja1105_ptp_clock_register(struct sja1105_private *priv);
+void sja1105_ptp_clock_unregister(struct sja1105_private *priv);
 
 /* Common implementations for the static and dynamic configs */
 size_t sja1105_l2_forwarding_entry_packing(void *buf, void *entry_ptr,

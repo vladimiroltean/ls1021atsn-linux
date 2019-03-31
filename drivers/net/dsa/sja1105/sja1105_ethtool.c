@@ -421,3 +421,23 @@ int sja1105_get_sset_count(struct dsa_switch *ds, int port, int sset)
 	return count;
 }
 
+int sja1105_get_ts_info(struct dsa_switch *ds, int port,
+			struct ethtool_ts_info *info)
+{
+	struct sja1105_private *priv = ds->priv;
+
+	/* Called during cleanup() */
+	if (!priv->clock)
+		return -ENODEV;
+
+	info->so_timestamping = SOF_TIMESTAMPING_TX_HARDWARE |
+				SOF_TIMESTAMPING_RX_HARDWARE |
+				SOF_TIMESTAMPING_RAW_HARDWARE;
+	info->tx_types = (1 << HWTSTAMP_TX_OFF) |
+			 (1 << HWTSTAMP_TX_ON);
+	info->rx_filters = (1 << HWTSTAMP_FILTER_NONE) |
+			   (1 << HWTSTAMP_FILTER_ALL);
+	info->phc_index = ptp_clock_index(priv->clock);
+	return 0;
+}
+
