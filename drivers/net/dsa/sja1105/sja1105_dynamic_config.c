@@ -274,6 +274,7 @@ struct sja1105_dynamic_table_ops sja1105et_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.addr = 0x34,
 	},
 	[BLK_IDX_XMII_PARAMS] = { 0 },
+	[BLK_IDX_SGMII] = { 0 },
 };
 
 /* SJA1105P/Q/R/S: Second generation: TODO */
@@ -330,6 +331,7 @@ struct sja1105_dynamic_table_ops sja1105pqrs_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.addr = 0x34,
 	},
 	[BLK_IDX_XMII_PARAMS] = { 0 },
+	[BLK_IDX_SGMII] = { 0 },
 };
 
 int sja1105_dynamic_config_read(struct sja1105_private *priv,

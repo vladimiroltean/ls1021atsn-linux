@@ -562,13 +562,29 @@ static int sja1105_rmii_clocking_setup(struct sja1105_private *priv, int port,
 	return 0;
 }
 
+/* TODO:
+ * Standard clause 22 registers for the internal SGMII PCS are
+ * memory-mapped starting at SPI address 0x1F0000.
+ * The SGMII port should already have a basic initialization done
+ * through the static configuration tables.
+ * If any further SGMII initialization steps (autonegotiation or checking the
+ * link status) need to be done, they might as well be added here.
+ */
+static int sgmii_clocking_setup(struct sja1105_private *priv, int port)
+{
+	struct device *dev = priv->ds->dev;
+
+	dev_err(dev, "TODO: Configure SGMII clocking\n");
+	return 0;
+}
+
 int sja1105_clocking_setup_port(struct sja1105_private *priv, int port)
 {
 	struct sja1105_xmii_params_entry *mii;
 	struct device *dev = priv->ds->dev;
 	sja1105_phy_interface_t phy_mode;
 	sja1105_mii_role_t role;
-	int rc;
+	int rc = 0;
 
 	mii = priv->static_config.tables[BLK_IDX_XMII_PARAMS].entries;
 
@@ -587,11 +603,24 @@ int sja1105_clocking_setup_port(struct sja1105_private *priv, int port)
 	case XMII_MODE_RGMII:
 		rc = sja1105_rgmii_clocking_setup(priv, port);
 		break;
+	case XMII_MODE_SGMII:
+		if (!IS_PQRS(priv->info->device_id)) {
+			dev_err(dev, "SGMII mode not supported!\n");
+			rc = -EINVAL;
+			goto out;
+		}
+		if ((IS_R(priv->info->device_id, priv->info->part_no) ||
+		     IS_S(priv->info->device_id, priv->info->part_no)) && port == 4)
+			rc = sgmii_clocking_setup(priv, port);
+		else
+			dev_info(dev, "port is tri-stated\n");
+		break;
 	default:
 		dev_err(dev, "Invalid interface mode specified: %d\n",
 			phy_mode);
 		return -EINVAL;
 	}
+out:
 	if (rc)
 		dev_err(dev, "Clocking setup for port %d failed: %d\n",
 			port, rc);
