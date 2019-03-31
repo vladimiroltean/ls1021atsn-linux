@@ -26,6 +26,7 @@
 #define SIZE_GENERAL_PARAMS_ENTRY_ET		40
 #define SIZE_GENERAL_PARAMS_ENTRY_PQRS		44
 #define SIZE_XMII_PARAMS_ENTRY			4
+#define SIZE_SGMII_ENTRY			144
 
 /* UM10944.pdf Page 11, Table 2. Configuration Blocks */
 enum {
@@ -38,6 +39,7 @@ enum {
 	BLKID_L2_FORWARDING_PARAMS		= 0x0E,
 	BLKID_AVB_PARAMS			= 0x10,
 	BLKID_GENERAL_PARAMS			= 0x11,
+	BLKID_SGMII				= 0xC8,
 	BLKID_XMII_PARAMS			= 0x4E,
 };
 
@@ -51,6 +53,7 @@ enum sja1105_blk_idx {
 	BLK_IDX_L2_FORWARDING_PARAMS,
 	BLK_IDX_AVB_PARAMS,
 	BLK_IDX_GENERAL_PARAMS,
+	BLK_IDX_SGMII,
 	BLK_IDX_XMII_PARAMS,
 	BLK_IDX_MAX,
 	/* Fake block indices that are only valid for dynamic access */
@@ -69,6 +72,7 @@ enum sja1105_blk_idx {
 #define MAX_GENERAL_PARAMS_COUNT		1
 #define MAX_XMII_PARAMS_COUNT			1
 #define MAX_AVB_PARAMS_COUNT			1
+#define MAX_SGMII_COUNT				1
 
 #define MAX_FRAME_MEMORY			929
 
@@ -90,19 +94,19 @@ enum sja1105_blk_idx {
 	(((device_id) == SJA1105E_DEVICE_ID) || \
 	 ((device_id) == SJA1105T_DEVICE_ID))
 /* P and R have same Device ID, and differ by Part Number */
-#define IS_P(device_id, part_nr) \
+#define IS_P(device_id, part_no) \
 	(((device_id) == SJA1105PR_DEVICE_ID) && \
-	 ((part_nr) == SJA1105P_PART_NR))
-#define IS_R(device_id, part_nr) \
+	 ((part_no) == SJA1105P_PART_NO))
+#define IS_R(device_id, part_no) \
 	(((device_id) == SJA1105PR_DEVICE_ID) && \
-	 ((part_nr) == SJA1105R_PART_NR))
+	 ((part_no) == SJA1105R_PART_NO))
 /* Same do Q and S */
-#define IS_Q(device_id, part_nr) \
+#define IS_Q(device_id, part_no) \
 	(((device_id) == SJA1105QS_DEVICE_ID) && \
-	 ((part_nr) == SJA1105Q_PART_NR))
-#define IS_S(device_id, part_nr) \
+	 ((part_no) == SJA1105Q_PART_NO))
+#define IS_S(device_id, part_no) \
 	(((device_id) == SJA1105QS_DEVICE_ID) && \
-	 ((part_nr) == SJA1105S_PART_NR))
+	 ((part_no) == SJA1105S_PART_NO))
 
 struct sja1105_general_params_entry {
 	u64 vllupformat;
@@ -241,6 +245,17 @@ struct sja1105_avb_params_entry {
 	u64 cas_master; /* only on P/Q/R/S */
 	u64 destmeta;
 	u64 srcmeta;
+};
+
+struct sja1105_sgmii_entry {
+	u64 digital_error_cnt;
+	u64 digital_control_2;
+	u64 debug_control;
+	u64 test_control;
+	u64 autoneg_control;
+	u64 digital_control_1;
+	u64 autoneg_adv;
+	u64 basic_control;
 };
 
 struct sja1105_table_header {
