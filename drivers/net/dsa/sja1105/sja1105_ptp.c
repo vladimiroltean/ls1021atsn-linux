@@ -128,6 +128,68 @@ sja1105_ptp_time_to_timespec(struct timespec64 *ts, u64 ptp_time)
 	u64_to_timespec64(ts, ptp_time * 8);
 }
 
+int sja1105_ptpegr_ts_poll(struct sja1105_private *priv,
+			   enum sja1105_ptpegr_ts_source source,
+			   int port, int ts_regid, struct timespec64 *ts)
+{
+#define SIZE_PTPEGR_TS 4
+	const struct sja1105_regs *regs = priv->info->regs;
+	const int ts_reg_index = 2 * port + ts_regid;
+	u8  packed_buf[SIZE_PTPEGR_TS];
+	u64 ptpegr_ts_reconstructed;
+	u64 ptpegr_ts_partial;
+	u64 full_current_ts;
+	u64 update;
+	int rc;
+
+	rc = sja1105_spi_send_packed_buf(priv, SPI_READ,
+					 regs->ptpegr_ts + ts_reg_index,
+					 packed_buf, SIZE_PTPEGR_TS);
+	if (rc < 0)
+		return rc;
+
+	sja1105_unpack(packed_buf, &ptpegr_ts_partial, 31, 8, SIZE_PTPEGR_TS);
+	sja1105_unpack(packed_buf, &update,             0, 0, SIZE_PTPEGR_TS);
+
+	if (!update)
+		/* No update. Keep trying, you'll make it someday. */
+		return -EAGAIN;
+
+	if (source == TS_PTPCLK)
+		/* Use the rate-corrected PTPCLK */
+		rc = sja1105_spi_send_int(priv, SPI_READ, regs->ptpclk,
+					  &full_current_ts, 8);
+	else if (source == TS_PTPTSCLK)
+		/* Use the uncorrected PTPTSCLK */
+		rc = sja1105_spi_send_int(priv, SPI_READ, regs->ptptsclk,
+					  &full_current_ts, 8);
+	else
+		return -EINVAL;
+	if (rc < 0)
+		return rc;
+
+	ptpegr_ts_reconstructed = (full_current_ts &
+				  ~priv->info->ptpegr_ts_mask) |
+				   ptpegr_ts_partial;
+	/* Check if wraparound occurred between moment when the partial
+	 * ptpegr timestamp was generated, and the moment when that
+	 * timestamp is being read out (now, ptpclkval/ptptsclk).
+	 * If last 24 bits (32 for P/Q/R/S) of current ptpclkval/ptptsclk
+	 * time are lower than the partial timestamp, then wraparound surely
+	 * occurred, as ptpclkval is 64-bit.
+	 * What is up to anyone's guess is how many times has the wraparound
+	 * occurred. The code assumes (perhaps foolishly?) that if wraparound
+	 * is present, it has only occurred once, and thus corrects for it.
+	 */
+	if ((full_current_ts & priv->info->ptpegr_ts_mask) <= ptpegr_ts_partial)
+		ptpegr_ts_reconstructed -= (priv->info->ptpegr_ts_mask + 1ull);
+
+	sja1105_ptp_time_to_timespec(ts, ptpegr_ts_reconstructed);
+
+	return 0;
+#undef SIZE_PTPEGR_TS
+}
+
 /* Read PTPTSCLK */
 int sja1105_ptp_ts_clk_get(struct sja1105_private *priv,
 			   struct timespec64 *ts)

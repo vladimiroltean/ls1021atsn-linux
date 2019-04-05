@@ -1448,7 +1448,7 @@ static void sja1105_xmit_work_handler(struct work_struct *work)
 		mgmt_route.destports = BIT(port);
 		mgmt_route.enfport = 1;
 		mgmt_route.tsreg = 0;
-		mgmt_route.takets = false;
+		mgmt_route.takets = true;
 
 		rc = sja1105_dynamic_config_write(priv, BLK_IDX_MGMT_ROUTE,
 						  port, &mgmt_route, true);
