@@ -511,6 +511,36 @@ static int sja1105_init_l2_policing(struct sja1105_private *priv)
 	return 0;
 }
 
+static int sja1105_init_tstamping(struct sja1105_private *priv)
+{
+	struct sja1105_avb_params_entry *avb;
+	struct sja1105_table *table;
+
+	table = &priv->static_config.tables[BLK_IDX_AVB_PARAMS];
+
+	/* Discard previous AVB Parameters Table */
+	if (table->entry_count) {
+		kfree(table->entries);
+		table->entry_count = 0;
+	}
+
+	table->entries = kcalloc(MAX_AVB_PARAMS_COUNT,
+				 table->ops->unpacked_entry_size, GFP_KERNEL);
+	if (!table->entries)
+		return -ENOMEM;
+
+	table->entry_count = MAX_AVB_PARAMS_COUNT;
+
+	avb = table->entries;
+
+	/* Destination MAC of follow-up meta frames */
+	avb->destmeta = 0x222222222222;
+	/* Source MAC of follow-up meta frames */
+	avb->srcmeta  = 0x222222222222;
+
+	return 0;
+}
+
 static int sja1105_static_config_load(struct sja1105_private *priv,
 				      struct sja1105_dt_port *ports)
 {
@@ -549,6 +579,9 @@ static int sja1105_static_config_load(struct sja1105_private *priv,
 	if (rc < 0)
 		return rc;
 	rc = sja1105_init_general_params(priv);
+	if (rc < 0)
+		return rc;
+	rc = sja1105_init_tstamping(priv);
 	if (rc < 0)
 		return rc;
 
@@ -1444,7 +1477,7 @@ static void sja1105_xmit_work_handler(struct work_struct *work)
 		mgmt_route.destports = BIT(port);
 		mgmt_route.enfport = 1;
 		mgmt_route.tsreg = 0;
-		mgmt_route.takets = false;
+		mgmt_route.takets = true;
 
 		rc = sja1105_dynamic_config_write(priv, BLK_IDX_MGMT_ROUTE,
 						  port, &mgmt_route, true);
@@ -1509,6 +1542,111 @@ static void sja1105_port_disable(struct dsa_switch *ds, int port)
 		kfree_skb(skb);
 }
 
+static int sja1105_hwtstamp_set(struct dsa_switch *ds, int port,
+				struct ifreq *ifr)
+{
+#if 0
+	struct mv88e6xxx_chip *chip = ds->priv;
+	struct mv88e6xxx_port_hwtstamp *ps = &chip->port_hwtstamp[port];
+	struct hwtstamp_config config;
+	int err;
+
+	if (copy_from_user(&config, ifr->ifr_data, sizeof(config)))
+		return -EFAULT;
+
+	err = mv88e6xxx_set_hwtstamp_config(chip, port, &config);
+	if (err)
+		return err;
+
+	/* Save the chosen configuration to be returned later. */
+	memcpy(&ps->tstamp_config, &config, sizeof(config));
+
+	return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ?
+		-EFAULT : 0;
+#endif
+	return 0;
+}
+
+#if 0
+static int gfar_hwtstamp_set(struct net_device *netdev, struct ifreq *ifr)
+{
+	struct hwtstamp_config config;
+	struct gfar_private *priv = netdev_priv(netdev);
+
+	if (copy_from_user(&config, ifr->ifr_data, sizeof(config)))
+		return -EFAULT;
+
+	/* reserved for future extensions */
+	if (config.flags)
+		return -EINVAL;
+
+	switch (config.tx_type) {
+	case HWTSTAMP_TX_OFF:
+		priv->hwts_tx_en = 0;
+		break;
+	case HWTSTAMP_TX_ON:
+		if (!(priv->device_flags & FSL_GIANFAR_DEV_HAS_TIMER))
+			return -ERANGE;
+		priv->hwts_tx_en = 1;
+		break;
+	default:
+		return -ERANGE;
+	}
+
+	switch (config.rx_filter) {
+	case HWTSTAMP_FILTER_NONE:
+		if (priv->hwts_rx_en) {
+			priv->hwts_rx_en = 0;
+			reset_gfar(netdev);
+		}
+		break;
+	default:
+		if (!(priv->device_flags & FSL_GIANFAR_DEV_HAS_TIMER))
+			return -ERANGE;
+		if (!priv->hwts_rx_en) {
+			priv->hwts_rx_en = 1;
+			reset_gfar(netdev);
+		}
+		config.rx_filter = HWTSTAMP_FILTER_ALL;
+		break;
+	}
+
+	return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ?
+		-EFAULT : 0;
+}
+
+static int gfar_hwtstamp_get(struct net_device *netdev, struct ifreq *ifr)
+{
+	struct hwtstamp_config config;
+	struct gfar_private *priv = netdev_priv(netdev);
+
+	config.flags = 0;
+	config.tx_type = priv->hwts_tx_en ? HWTSTAMP_TX_ON : HWTSTAMP_TX_OFF;
+	config.rx_filter = (priv->hwts_rx_en ?
+			    HWTSTAMP_FILTER_ALL : HWTSTAMP_FILTER_NONE);
+
+	return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ?
+		-EFAULT : 0;
+}
+#endif
+
+static int sja1105_hwtstamp_get(struct dsa_switch *ds, int port,
+				struct ifreq *ifr)
+{
+#if 0
+	struct mv88e6xxx_chip *chip = ds->priv;
+	struct mv88e6xxx_port_hwtstamp *ps = &chip->port_hwtstamp[port];
+	struct hwtstamp_config *config = &ps->tstamp_config;
+
+	if (!chip->info->ptp_support)
+		return -EOPNOTSUPP;
+
+	return copy_to_user(ifr->ifr_data, config, sizeof(*config)) ?
+		-EFAULT : 0;
+#endif
+	return 0;
+}
+
 static const struct dsa_switch_ops sja1105_switch_ops = {
 	.get_tag_protocol	= sja1105_get_tag_protocol,
 	.setup			= sja1105_setup,
@@ -1533,6 +1671,8 @@ static const struct dsa_switch_ops sja1105_switch_ops = {
 	.port_mdb_del		= sja1105_mdb_del,
 	.port_enable		= sja1105_port_enable,
 	.port_disable		= sja1105_port_disable,
+	.port_hwtstamp_get	= sja1105_hwtstamp_get,
+	.port_hwtstamp_set	= sja1105_hwtstamp_set,
 };
 
 static int sja1105_check_device_id(struct sja1105_private *priv)

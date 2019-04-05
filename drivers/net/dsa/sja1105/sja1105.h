@@ -31,7 +31,9 @@ struct sja1105_port {
 	bool rgmii_rx_delay;
 	bool rgmii_tx_delay;
 	struct work_struct xmit_work;
+	struct work_struct recv_work;
 	struct sja1105_skb_ring xmit_ring;
+	struct sja1105_skb_ring recv_ring;
 };
 
 /* Keeps the different addresses between E/T and P/Q/R/S */
@@ -71,6 +73,8 @@ struct sja1105_info {
 	 * switch core and device_id)
 	 */
 	u64 part_no;
+	/* E/T and P/Q/R/S have egress timestamps of different sizes */
+	u64 ptpegr_ts_mask;
 	const struct sja1105_dynamic_table_ops *dyn_ops;
 	const struct sja1105_table_ops *static_ops;
 	const struct sja1105_regs *regs;

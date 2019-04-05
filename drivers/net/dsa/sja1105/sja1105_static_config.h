@@ -21,6 +21,8 @@
 #define SIZE_L2_LOOKUP_PARAMS_ENTRY_ET		4
 #define SIZE_L2_LOOKUP_PARAMS_ENTRY_PQRS	16
 #define SIZE_L2_FORWARDING_PARAMS_ENTRY		12
+#define SIZE_AVB_PARAMS_ENTRY_ET		12
+#define SIZE_AVB_PARAMS_ENTRY_PQRS		16
 #define SIZE_GENERAL_PARAMS_ENTRY_ET		40
 #define SIZE_GENERAL_PARAMS_ENTRY_PQRS		44
 #define SIZE_XMII_PARAMS_ENTRY			4
@@ -34,6 +36,7 @@ enum {
 	BLKID_MAC_CONFIG			= 0x09,
 	BLKID_L2_LOOKUP_PARAMS			= 0x0D,
 	BLKID_L2_FORWARDING_PARAMS		= 0x0E,
+	BLKID_AVB_PARAMS			= 0x10,
 	BLKID_GENERAL_PARAMS			= 0x11,
 	BLKID_XMII_PARAMS			= 0x4E,
 };
@@ -46,6 +49,7 @@ enum sja1105_blk_idx {
 	BLK_IDX_MAC_CONFIG,
 	BLK_IDX_L2_LOOKUP_PARAMS,
 	BLK_IDX_L2_FORWARDING_PARAMS,
+	BLK_IDX_AVB_PARAMS,
 	BLK_IDX_GENERAL_PARAMS,
 	BLK_IDX_XMII_PARAMS,
 	BLK_IDX_MAX,
@@ -64,6 +68,7 @@ enum sja1105_blk_idx {
 #define MAX_L2_FORWARDING_PARAMS_COUNT		1
 #define MAX_GENERAL_PARAMS_COUNT		1
 #define MAX_XMII_PARAMS_COUNT			1
+#define MAX_AVB_PARAMS_COUNT			1
 
 #define MAX_FRAME_MEMORY			929
 
@@ -188,6 +193,13 @@ struct sja1105_l2_policing_entry {
 	u64 rate;
 	u64 maxlen;
 	u64 partition;
+};
+
+struct sja1105_avb_params_entry {
+	u64 l2cbs; /* only on P/Q/R/S */
+	u64 cas_master; /* only on P/Q/R/S */
+	u64 destmeta;
+	u64 srcmeta;
 };
 
 struct sja1105_mac_config_entry {
