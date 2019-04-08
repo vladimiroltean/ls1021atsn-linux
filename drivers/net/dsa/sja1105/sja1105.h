@@ -22,6 +22,8 @@
 
 struct sja1105_port {
 	struct dsa_port *dp;
+	bool rgmii_rx_delay;
+	bool rgmii_tx_delay;
 	struct work_struct xmit_work;
 	struct sja1105_skb_ring xmit_ring;
 };
@@ -61,6 +63,7 @@ struct sja1105_info {
 	const struct sja1105_table_ops *static_ops;
 	const struct sja1105_regs *regs;
 	int (*reset_cmd)(const void *ctx, const void *data);
+	int (*setup_rgmii_delay)(const void *ctx, int port, bool rx, bool tx);
 	const char *name;
 };
 
