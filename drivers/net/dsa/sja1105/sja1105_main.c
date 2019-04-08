@@ -558,6 +558,21 @@ static int sja1105_static_config_load(struct sja1105_private *priv,
 	return sja1105_static_config_upload(priv);
 }
 
+static void sja1105_parse_rgmii_delay(const struct sja1105_dt_port *in,
+				      struct sja1105_port *out)
+{
+	if (in->role == XMII_MAC)
+		return;
+
+	if (in->phy_mode == PHY_INTERFACE_MODE_RGMII_RXID ||
+	    in->phy_mode == PHY_INTERFACE_MODE_RGMII_ID)
+		out->rgmii_rx_delay = true;
+
+	if (in->phy_mode == PHY_INTERFACE_MODE_RGMII_TXID ||
+	    in->phy_mode == PHY_INTERFACE_MODE_RGMII_ID)
+		out->rgmii_tx_delay = true;
+}
+
 static int sja1105_parse_ports_node(struct sja1105_private *priv,
 				    struct sja1105_dt_port *ports,
 				    struct device_node *ports_node)
@@ -1318,13 +1333,28 @@ static int sja1105_setup(struct dsa_switch *ds)
 {
 	struct sja1105_dt_port ports[SJA1105_NUM_PORTS];
 	struct sja1105_private *priv = ds->priv;
-	int rc;
+	int rc, i;
 
 	rc = sja1105_parse_dt(priv, ports);
 	if (rc < 0) {
 		dev_err(ds->dev, "Failed to parse DT: %d\n", rc);
 		return rc;
 	}
+
+	/* Error out early if internal delays are required through DT
+	 * and we can't apply them.
+	 */
+	for (i = 0; i < SJA1105_NUM_PORTS; i++) {
+		sja1105_parse_rgmii_delay(&ports[i], &priv->ports[i]);
+
+		if ((priv->ports[i].rgmii_rx_delay ||
+		     priv->ports[i].rgmii_tx_delay) &&
+		     !priv->info->setup_rgmii_delay) {
+			dev_err(ds->dev, "RGMII delay not supported\n");
+			return -EINVAL;
+		}
+	}
+
 	/* Create and send configuration down to device */
 	rc = sja1105_static_config_load(priv, ports);
 	if (rc < 0) {

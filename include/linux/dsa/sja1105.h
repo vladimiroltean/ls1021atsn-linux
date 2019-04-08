@@ -29,6 +29,8 @@ struct sja1105_skb_cb {
 
 struct sja1105_port {
 	struct dsa_port *dp;
+	bool rgmii_rx_delay;
+	bool rgmii_tx_delay;
 	int mgmt_slot;
 };
 
