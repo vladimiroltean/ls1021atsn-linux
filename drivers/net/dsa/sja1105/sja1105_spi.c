@@ -11,6 +11,7 @@
 #define SIZE_SPI_MSG_MAXLEN	(64 * 4)
 #define SPI_TRANSFER_SIZE_MAX	(SIZE_SPI_MSG_HEADER + SIZE_SPI_MSG_MAXLEN)
 #define SIZE_RESET_CMD		4
+#define SIZE_PORT_CTRL		4
 
 static int sja1105_spi_transfer(const struct sja1105_private *priv,
 				const void *tx, void *rx, int size)
@@ -279,6 +280,25 @@ static int sja1105_cold_reset(const struct sja1105_private *priv)
 	return priv->info->reset_cmd(priv, &reset);
 }
 
+static int sja1105_inhibit_tx(const struct sja1105_private *priv,
+			      const unsigned long *port_bitmap)
+{
+	const struct sja1105_regs *regs = priv->info->regs;
+	u64 inhibit_cmd;
+	int port, rc;
+
+	rc = sja1105_spi_send_int(priv, SPI_READ, regs->port_control,
+				  &inhibit_cmd, SIZE_PORT_CTRL);
+	if (rc < 0)
+		return rc;
+
+	for_each_set_bit(port, port_bitmap, SJA1105_NUM_PORTS)
+		inhibit_cmd |= BIT(port);
+
+	return sja1105_spi_send_int(priv, SPI_WRITE, regs->port_control,
+				    &inhibit_cmd, SIZE_PORT_CTRL);
+}
+
 struct sja1105_status {
 	u64 configs;
 	u64 crcchkl;
@@ -367,6 +387,7 @@ static_config_buf_prepare_for_upload(struct sja1105_private *priv,
 int sja1105_static_config_upload(struct sja1105_private *priv)
 {
 #define RETRIES 10
+	unsigned long port_bitmap = GENMASK_ULL(SJA1105_NUM_PORTS - 1, 0);
 	struct sja1105_static_config *config = &priv->static_config;
 	const struct sja1105_regs *regs = priv->info->regs;
 	struct device *dev = &priv->spidev->dev;
@@ -385,6 +406,20 @@ int sja1105_static_config_upload(struct sja1105_private *priv)
 		dev_err(dev, "Invalid config, cannot upload\n");
 		return -EINVAL;
 	}
+	/* Prevent PHY jabbering during switch reset by inhibiting
+	 * Tx on all ports and waiting for current packet to drain.
+	 * Otherwise, the PHY will see an unterminated Ethernet packet.
+	 */
+	rc = sja1105_inhibit_tx(priv, &port_bitmap);
+	if (rc < 0) {
+		dev_err(dev, "Failed to inhibit Tx on ports\n");
+		return -ENXIO;
+	}
+	/* Wait for an eventual egress packet to finish transmission
+	 * (reach IFG). It is guaranteed that a second one will not
+	 * follow, and that switch cold reset is thus safe
+	 */
+	usleep_range(500, 1000);
 	do {
 		/* Put the SJA1105 in programming mode */
 		rc = sja1105_cold_reset(priv);
@@ -450,6 +485,7 @@ struct sja1105_regs sja1105et_regs = {
 	.device_id = 0x0,
 	.prod_id = 0x100BC3,
 	.status = 0x1,
+	.port_control = 0x11,
 	.config = 0x020000,
 	.rgu = 0x100440,
 	.pad_mii_tx = {0x100800, 0x100802, 0x100804, 0x100806, 0x100808},
@@ -474,6 +510,7 @@ struct sja1105_regs sja1105pqrs_regs = {
 	.device_id = 0x0,
 	.prod_id = 0x100BC3,
 	.status = 0x1,
+	.port_control = 0x12,
 	.config = 0x020000,
 	.rgu = 0x100440,
 	.pad_mii_tx = {0x100800, 0x100802, 0x100804, 0x100806, 0x100808},
