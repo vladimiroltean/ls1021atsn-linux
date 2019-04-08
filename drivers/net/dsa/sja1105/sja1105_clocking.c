@@ -432,7 +432,12 @@ static int rgmii_clocking_setup(struct sja1105_private *priv, int port)
 		dev_err(dev, "Failed to configure Tx pad registers\n");
 		return rc;
 	}
-	return 0;
+	if (!priv->info->setup_rgmii_delay)
+		return 0;
+
+	return priv->info->setup_rgmii_delay(priv, port,
+					     priv->ports[port].rgmii_rx_delay,
+					     priv->ports[port].rgmii_tx_delay);
 }
 
 static int sja1105_cgu_rmii_ref_clk_config(struct sja1105_private *priv,
