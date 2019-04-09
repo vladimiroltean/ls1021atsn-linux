@@ -156,6 +156,12 @@ struct dsa_port {
 	 * Original copy of the master netdev net_device_ops
 	 */
 	const struct net_device_ops *orig_ndo_ops;
+
+	/* Property used to allow traffic at runtime to bypass the DSA
+	 * filter in eth_type_trans and be processed as regular on the
+	 * master net device.
+	 */
+	bool			uses_tag_protocol;
 };
 
 struct dsa_switch {
@@ -502,7 +508,7 @@ struct net_device *dsa_dev_to_net_device(struct device *dev);
 static inline bool netdev_uses_dsa(struct net_device *dev)
 {
 #if IS_ENABLED(CONFIG_NET_DSA)
-	return dev->dsa_ptr && dev->dsa_ptr->rcv;
+	return dev->dsa_ptr && dev->dsa_ptr->uses_tag_protocol;
 #endif
 	return false;
 }

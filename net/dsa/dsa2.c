@@ -585,6 +585,13 @@ static int dsa_port_parse_cpu(struct dsa_port *dp, struct net_device *master)
 	dp->tag_ops = tag_ops;
 	dp->master = master;
 	dp->dst = dst;
+	/* Initially tell DSA to filter all traffic on the master net
+	 * device in eth_type_trans unconditionally if we have a
+	 * packet_type handler (true for all tagging protocols except
+	 * DSA_TAG_PROTO_NONE). Then drivers can later change this
+	 * property.
+	 */
+	dp->uses_tag_protocol = !!dp->rcv;
 
 	return 0;
 }

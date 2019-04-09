@@ -161,6 +161,13 @@ static int dsa_switch_setup_one(struct dsa_switch *ds,
 		/* Few copies for faster access in master receive hot path */
 		dst->cpu_dp->rcv = dst->cpu_dp->tag_ops->rcv;
 		dst->cpu_dp->dst = dst;
+		/* Initially tell DSA to filter all traffic on the master net
+		 * device in eth_type_trans unconditionally if we have a
+		 * packet_type handler (true for all tagging protocols except
+		 * DSA_TAG_PROTO_NONE). Then drivers can later change this
+		 * property.
+		 */
+		dst->cpu_dp->uses_tag_protocol = !!dst->cpu_dp->rcv;
 	}
 
 	memcpy(ds->rtable, cd->rtable, sizeof(ds->rtable));
