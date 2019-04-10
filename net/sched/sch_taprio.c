@@ -128,8 +128,8 @@ static struct sk_buff *taprio_dequeue(struct Qdisc *sch)
 {
 	struct taprio_sched *q = qdisc_priv(sch);
 	struct net_device *dev = qdisc_dev(sch);
+	struct sk_buff *skb = NULL;
 	struct sched_entry *entry;
-	struct sk_buff *skb;
 	u32 gate_mask;
 	int i;
 
@@ -146,10 +146,9 @@ static struct sk_buff *taprio_dequeue(struct Qdisc *sch)
 	 * "AdminGateSates"
 	 */
 	gate_mask = entry ? entry->gate_mask : TAPRIO_ALL_GATES_OPEN;
-	rcu_read_unlock();
 
 	if (!gate_mask)
-		return NULL;
+		goto done;
 
 	for (i = 0; i < dev->num_tx_queues; i++) {
 		struct Qdisc *child = q->qdiscs[i];
@@ -179,26 +178,35 @@ static struct sk_buff *taprio_dequeue(struct Qdisc *sch)
 		 * guard band ...
 		 */
 		if (gate_mask != TAPRIO_ALL_GATES_OPEN &&
-		    ktime_after(guard, entry->close_time))
-			return NULL;
+		    ktime_after(guard, entry->close_time)) {
+			skb = NULL;
+			goto done;
+		}
 
 		/* ... and no budget. */
 		if (gate_mask != TAPRIO_ALL_GATES_OPEN &&
-		    atomic_sub_return(len, &entry->budget) < 0)
-			return NULL;
+		    atomic_sub_return(len, &entry->budget) < 0) {
+			skb = NULL;
+			goto done;
+		}
 
 		skb = child->ops->dequeue(child);
 		if (unlikely(!skb))
-			return NULL;
+			goto done;
+
 
 		qdisc_bstats_update(sch, skb);
 		qdisc_qstats_backlog_dec(sch, skb);
 		sch->q.qlen--;
 
-		return skb;
+		goto done;
 	}
 
-	return NULL;
+done:
+	rcu_read_unlock();
+
+	return skb;
+
 }
 
 static bool should_restart_cycle(const struct taprio_sched *q,
