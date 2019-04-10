@@ -49,6 +49,7 @@ struct sched_gate_list {
 	s64 cycle_time;
 	s64 cycle_time_extension;
 	s64 base_time;
+	u32 frame_preemption;
 };
 
 struct taprio_sched {
@@ -396,6 +397,7 @@ static const struct nla_policy taprio_policy[TCA_TAPRIO_ATTR_MAX + 1] = {
 	[TCA_TAPRIO_ATTR_SCHED_CLOCKID]              = { .type = NLA_S32 },
 	[TCA_TAPRIO_ATTR_SCHED_CYCLE_TIME]           = { .type = NLA_S64 },
 	[TCA_TAPRIO_ATTR_SCHED_CYCLE_TIME_EXTENSION] = { .type = NLA_S64 },
+	[TCA_TAPRIO_ATTR_FRAME_PREEMPTION]           = { .type = NLA_U32 },
 };
 
 static int fill_sched_entry(struct nlattr **tb, struct sched_entry *entry,
@@ -502,6 +504,9 @@ static int parse_taprio_schedule(struct nlattr **tb,
 
 	if (tb[TCA_TAPRIO_ATTR_SCHED_CYCLE_TIME])
 		new->cycle_time = nla_get_s64(tb[TCA_TAPRIO_ATTR_SCHED_CYCLE_TIME]);
+
+	if (tb[TCA_TAPRIO_ATTR_FRAME_PREEMPTION])
+		new->frame_preemption = nla_get_u32(tb[TCA_TAPRIO_ATTR_FRAME_PREEMPTION]);
 
 	if (tb[TCA_TAPRIO_ATTR_SCHED_ENTRY_LIST])
 		err = parse_sched_list(
@@ -1024,6 +1029,10 @@ static int dump_schedule(struct sk_buff *msg,
 
 	if (nla_put_s64(msg, TCA_TAPRIO_ATTR_SCHED_CYCLE_TIME_EXTENSION,
 			root->cycle_time_extension, TCA_TAPRIO_PAD))
+		return -1;
+
+	if (nla_put_u32(msg, TCA_TAPRIO_ATTR_FRAME_PREEMPTION,
+			root->frame_preemption))
 		return -1;
 
 	entry_list = nla_nest_start(msg, TCA_TAPRIO_ATTR_SCHED_ENTRY_LIST);
