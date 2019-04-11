@@ -407,9 +407,6 @@ static int dsa_port_fixed_link_register_of(struct dsa_port *dp)
 		mode = PHY_INTERFACE_MODE_NA;
 	phydev->interface = mode;
 
-	genphy_config_init(phydev);
-	genphy_read_status(phydev);
-
 	if (ds->ops->adjust_link)
 		ds->ops->adjust_link(ds, port, phydev);
 
