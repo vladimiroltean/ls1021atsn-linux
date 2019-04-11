@@ -190,6 +190,8 @@ static bool dsa_port_can_apply_vlan_filtering(struct dsa_port *dp,
 int dsa_port_vlan_filtering(struct dsa_port *dp, bool vlan_filtering,
 			    struct switchdev_trans *trans)
 {
+	/* Violate a const pointer here */
+	struct dsa_port *cpu_dp = (struct dsa_port *)dp->cpu_dp;
 	struct dsa_switch *ds = dp->ds;
 	int err;
 
@@ -209,6 +211,12 @@ int dsa_port_vlan_filtering(struct dsa_port *dp, bool vlan_filtering,
 		return err;
 
 	dp->vlan_filtering = vlan_filtering;
+	/* In case of switches where VLAN filtering is not per-port,
+	 * also put the setting in the most unambiguous place to
+	 * retrieve it from.
+	 */
+	if (ds->vlan_filtering_is_global)
+		cpu_dp->vlan_filtering = vlan_filtering;
 	return 0;
 }
 
