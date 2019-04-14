@@ -207,7 +207,7 @@ static struct sk_buff *taprio_peek(struct Qdisc *sch)
 
 static inline int length_to_duration(struct taprio_sched *q, int len)
 {
-	return (len * atomic64_read(&q->picos_per_byte)) / 1000;
+	return div_s64(len * atomic64_read(&q->picos_per_byte), 1000);
 }
 
 static struct sk_buff *taprio_dequeue_soft(struct Qdisc *sch)
@@ -385,6 +385,7 @@ static enum hrtimer_restart advance_sched(struct hrtimer *timer)
 	struct sched_entry *entry, *next;
 	struct Qdisc *sch = q->root;
 	ktime_t close_time;
+	int budget;
 
 	spin_lock(&q->current_entry_lock);
 	entry = rcu_dereference_protected(q->current_entry,
@@ -431,8 +432,8 @@ static enum hrtimer_restart advance_sched(struct hrtimer *timer)
 	}
 
 	next->close_time = close_time;
-	atomic_set(&next->budget,
-		   (next->interval * 1000) / atomic64_read(&q->picos_per_byte));
+	budget = div_s64(next->interval * 1000, atomic64_read(&q->picos_per_byte));
+	atomic_set(&next->budget, budget);
 
 first_run:
 	rcu_assign_pointer(q->current_entry, next);
@@ -697,6 +698,7 @@ static void setup_first_close_time(struct taprio_sched *q,
 {
 	struct sched_entry *first;
 	ktime_t cycle;
+	int budget;
 
 	first = list_first_entry(&sched->entries,
 				 struct sched_entry, list);
@@ -707,9 +709,9 @@ static void setup_first_close_time(struct taprio_sched *q,
 	sched->cycle_close_time = ktime_add_ns(base, cycle);
 
 	first->close_time = ktime_add_ns(base, first->interval);
-	atomic_set(&first->budget,
-		   (first->interval * 1000) /
-		   atomic64_read(&q->picos_per_byte));
+	budget = div_s64(first->interval * 1000,
+			 atomic64_read(&q->picos_per_byte));
+	atomic_set(&first->budget, budget);
 }
 
 static void taprio_start_sched(struct Qdisc *sch,
