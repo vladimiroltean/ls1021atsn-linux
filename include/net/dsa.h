@@ -186,6 +186,16 @@ struct dsa_port {
 	struct net_device	*bridge_dev;
 	struct devlink_port	devlink_port;
 	struct phylink		*pl;
+
+	struct work_struct	xmit_work;
+	struct sk_buff_head	xmit_queue;
+
+	/*
+	 * Give the switch driver somewhere to hang its per-port private data
+	 * structures (accessible from the tagger).
+	 */
+	void *priv;
+
 	/*
 	 * Original copy of the master netdev ethtool_ops
 	 */
@@ -514,6 +524,12 @@ struct dsa_switch_ops {
 				 struct sk_buff *clone, unsigned int type);
 	bool	(*port_rxtstamp)(struct dsa_switch *ds, int port,
 				 struct sk_buff *skb, unsigned int type);
+
+	/*
+	 * Deferred frame Tx
+	 */
+	netdev_tx_t (*port_deferred_xmit)(struct dsa_switch *ds, int port,
+					  struct sk_buff *skb);
 };
 
 struct dsa_switch_driver {
@@ -631,5 +647,7 @@ void dsa_port_phylink_mac_change(struct dsa_switch *ds, int port, bool up);
 int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int index,
 				 bool enabled);
 #endif
+
+netdev_tx_t dsa_enqueue_skb(struct sk_buff *skb, struct net_device *dev);
 
 #endif
