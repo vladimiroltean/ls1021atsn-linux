@@ -181,27 +181,32 @@ EXPORT_SYMBOL_GPL(dsa_dev_to_net_device);
  * delivered is never notified unless we do so here.
  */
 static bool dsa_skb_defer_rx_timestamp(struct dsa_slave_priv *p,
-				       struct sk_buff *skb)
+				       struct sk_buff *skb,
+				       struct net_device *dev)
 {
 	struct dsa_switch *ds = p->dp->ds;
-	unsigned int type;
+
+	if (!ds->ops->port_rxtstamp)
+		return false;
 
 	if (skb_headroom(skb) < ETH_HLEN)
 		return false;
 
 	__skb_push(skb, ETH_HLEN);
 
-	type = ptp_classify_raw(skb);
+	DSA_SKB_CB(skb)->ptp_type = ptp_classify_raw(skb);
 
 	__skb_pull(skb, ETH_HLEN);
 
-	if (type == PTP_CLASS_NONE)
-		return false;
+	if (p->dp->cpu_dp->tag_ops->can_tstamp) {
+		if (!p->dp->cpu_dp->tag_ops->can_tstamp(skb, dev))
+			return false;
+	} else {
+		if (DSA_SKB_CB(skb)->ptp_type == PTP_CLASS_NONE)
+			return false;
+	}
 
-	if (likely(ds->ops->port_rxtstamp))
-		return ds->ops->port_rxtstamp(ds, p->dp->index, skb, type);
-
-	return false;
+	return ds->ops->port_rxtstamp(ds, p->dp->index, skb);
 }
 
 static int dsa_switch_rcv(struct sk_buff *skb, struct net_device *dev,
@@ -239,7 +244,7 @@ static int dsa_switch_rcv(struct sk_buff *skb, struct net_device *dev,
 	s->rx_bytes += skb->len;
 	u64_stats_update_end(&s->syncp);
 
-	if (dsa_skb_defer_rx_timestamp(p, skb))
+	if (dsa_skb_defer_rx_timestamp(p, skb, dev))
 		return 0;
 
 	netif_receive_skb(skb);
