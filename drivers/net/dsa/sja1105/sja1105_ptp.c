@@ -15,6 +15,7 @@
  * expresses it) during 1 second.
  */
 #define SJA1105_MAX_ADJ_PPB		NSEC_PER_SEC
+#define SIZE_PTPEGR_TS			4
 
 struct sja1105_ptp_cmd {
 	u64 ptpstrtsch;   /* start schedule */
@@ -121,6 +122,90 @@ sja1105_ptp_time_to_timespec(struct timespec64 *ts, u64 ptp_time)
 	if (ptp_time >= 0x1FFFFFFFFFFFFFFFull)
 		pr_err("Integer overflow during timespec conversion!\n");
 	u64_to_timespec64(ts, ptp_time * 8);
+}
+
+/* Reconstruct @ts_partial (either RX or TX timestamp) by reading the current
+ * PTP clock to fill in the high-order bits up to 64. Must be called from a
+ * sleepable context.
+ * @orig_time is the best approximation in CLOCK_MONOTONIC kernel time of when
+ * the timestamp was recorded by the switch. The elapsed time since then is
+ * calculated and is used to detect multiple wraparounds of the 24-bit
+ * timestamp (0.135 seconds) or 32-bit timestamp (34.35 seconds).
+ * Additionally, it may be possible that the ktime diff does not detect a
+ * 24-bit wraparound that actually did not take 0.135 seconds to occur.
+ * If last 24 bits of the current PTP time are lower than the partial
+ * timestamp, then wraparound surely occurred and must be accounted for.
+ */
+int sja1105_ptp_tstamp_reconstruct(struct sja1105_private *priv,
+				   u32 ts_partial, ktime_t orig_time,
+				   struct timespec64 *ts_full)
+{
+	const struct sja1105_regs *regs = priv->info->regs;
+	u64 ts_reconstructed;
+	u64 full_current_ts;
+	int num_wraparounds;
+	ktime_t now, diff;
+	u64 ts_mask;
+	int rc;
+
+	if (priv->ptp_tstamps_use_corrected_clk)
+		/* Use the rate-corrected PTPCLK */
+		rc = sja1105_spi_send_int(priv, SPI_READ, regs->ptpclk,
+					  &full_current_ts, 8);
+	else
+		/* Use the uncorrected PTPTSCLK */
+		rc = sja1105_spi_send_int(priv, SPI_READ, regs->ptptsclk,
+					  &full_current_ts, 8);
+	if (rc < 0) {
+		dev_err(priv->ds->dev, "Could not read PTP time: %d\n", rc);
+		return rc;
+	}
+
+	now = ktime_get();
+	diff = ktime_sub(now, orig_time);
+
+	/* The 3 is because the PTP clock increments by 1 every 8 ns */
+	num_wraparounds = ktime_to_ns(diff) >> (priv->info->ptp_ts_bits + 3);
+	ts_mask = GENMASK_ULL(priv->info->ptp_ts_bits - 1, 0);
+
+	ts_reconstructed = (full_current_ts & ~ts_mask) | ts_partial;
+
+	/* Check lower 24 bits of current PTP time against the timestamp */
+	if ((full_current_ts & ts_mask) <= ts_partial)
+		num_wraparounds++;
+
+	ts_reconstructed -= num_wraparounds * (ts_mask + 1ull);
+
+	/*dev_err(priv->ds->dev, "%s: num_wraparounds %d diff 0x%llx ts_partial %x full_current_ts 0x%llx ts_reconstructed %llx\n",*/
+		/*__func__, num_wraparounds, ktime_to_ns(diff), ts_partial, full_current_ts, ts_reconstructed);*/
+
+	sja1105_ptp_time_to_timespec(ts_full, ts_reconstructed);
+	return 0;
+}
+
+int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, int ts_regid,
+			   ktime_t orig_time, struct timespec64 *ts)
+{
+	const struct sja1105_regs *regs = priv->info->regs;
+	const int ts_reg_index = 2 * port + ts_regid;
+	u8  packed_buf[SIZE_PTPEGR_TS];
+	u64 ts_partial;
+	u64 update;
+	int rc;
+
+	rc = sja1105_spi_send_packed_buf(priv, SPI_READ,
+					 regs->ptpegr_ts + ts_reg_index,
+					 packed_buf, SIZE_PTPEGR_TS);
+	if (rc < 0)
+		return rc;
+
+	sja1105_unpack(packed_buf, &update, 0, 0, SIZE_PTPEGR_TS);
+	if (!update)
+		/* No update. Keep trying, you'll make it someday. */
+		return -EAGAIN;
+
+	sja1105_unpack(packed_buf, &ts_partial, 31, 8, SIZE_PTPEGR_TS);
+	return sja1105_ptp_tstamp_reconstruct(priv, ts_partial, orig_time, ts);
 }
 
 /* Read PTPTSCLK */

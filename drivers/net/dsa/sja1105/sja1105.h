@@ -57,6 +57,11 @@ struct sja1105_info {
 	 * switch core and device_id)
 	 */
 	u64 part_no;
+	/* E/T and P/Q/R/S have partial timestamps of different sizes.
+	 * They must be reconstructed on both families anyway to get the full
+	 * 64-bit values back.
+	 */
+	int ptp_ts_bits;
 	const struct sja1105_dynamic_table_ops *dyn_ops;
 	const struct sja1105_table_ops *static_ops;
 	const struct sja1105_regs *regs;
@@ -77,6 +82,9 @@ struct sja1105_private {
 	struct ptp_clock *clock;
 	struct ptp_clock_info ptp_caps;
 	enum sja1105_ptp_clk_mode ptp_mode;
+	bool ptp_tstamps_use_corrected_clk;
+	/* RX timestamping flag is global */
+	bool hwts_rx_en;
 };
 
 #include "sja1105_dynamic_config.h"
@@ -158,6 +166,12 @@ void sja1105_ptp_clock_unregister(struct sja1105_private *priv);
 
 int sja1105et_ptp_cmd(const void *ctx, const void *data);
 int sja1105pqrs_ptp_cmd(const void *ctx, const void *data);
+
+int sja1105_ptp_tstamp_reconstruct(struct sja1105_private *priv,
+				   u32 ts_partial, ktime_t orig_time,
+				   struct timespec64 *ts_full);
+int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, int ts_regid,
+			   ktime_t orig_time, struct timespec64 *ts);
 
 /* Common implementations for the static and dynamic configs */
 size_t sja1105_l2_forwarding_entry_packing(void *buf, void *entry_ptr,
