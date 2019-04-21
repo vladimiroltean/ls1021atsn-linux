@@ -520,6 +520,7 @@ bool mv88e6xxx_port_txtstamp(struct dsa_switch *ds, int port,
 	ps->tx_tstamp_start = jiffies;
 	ps->tx_seq_id = be16_to_cpup(seq_ptr);
 
+	skb_shinfo(clone)->tx_flags |= SKBTX_IN_PROGRESS;
 	ptp_schedule_worker(chip->ptp_clock, 0);
 	return true;
 }
