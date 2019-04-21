@@ -499,6 +499,39 @@ static int sja1105_init_l2_policing(struct sja1105_private *priv)
 	return 0;
 }
 
+static int sja1105_init_avb_params(struct sja1105_private *priv,
+				   bool on)
+{
+	struct sja1105_avb_params_entry *avb;
+	struct sja1105_table *table;
+
+	table = &priv->static_config.tables[BLK_IDX_AVB_PARAMS];
+
+	/* Discard previous AVB Parameters Table */
+	if (table->entry_count) {
+		kfree(table->entries);
+		table->entry_count = 0;
+	}
+
+	/* Configure the reception of meta frames only if requested */
+	if (!on)
+		return 0;
+
+	table->entries = kcalloc(SJA1105_MAX_AVB_PARAMS_COUNT,
+				 table->ops->unpacked_entry_size, GFP_KERNEL);
+	if (!table->entries)
+		return -ENOMEM;
+
+	table->entry_count = SJA1105_MAX_AVB_PARAMS_COUNT;
+
+	avb = table->entries;
+
+	avb->destmeta = SJA1105_META_DMAC;
+	avb->srcmeta  = SJA1105_META_SMAC;
+
+	return 0;
+}
+
 static int sja1105_static_config_load(struct sja1105_private *priv,
 				      struct sja1105_dt_port *ports)
 {
@@ -537,6 +570,9 @@ static int sja1105_static_config_load(struct sja1105_private *priv,
 	if (rc < 0)
 		return rc;
 	rc = sja1105_init_general_params(priv);
+	if (rc < 0)
+		return rc;
+	rc = sja1105_init_avb_params(priv, false);
 	if (rc < 0)
 		return rc;
 
@@ -1407,7 +1443,7 @@ static int sja1105_setup(struct dsa_switch *ds)
 }
 
 static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
-			     struct sk_buff *skb)
+			     struct sk_buff *skb, bool takets)
 {
 	struct sja1105_mgmt_entry mgmt_route = {0};
 	struct sja1105_private *priv = ds->priv;
@@ -1420,6 +1456,8 @@ static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
 	mgmt_route.macaddr = ether_addr_to_u64(hdr->h_dest);
 	mgmt_route.destports = BIT(port);
 	mgmt_route.enfport = 1;
+	mgmt_route.tsreg = 0;
+	mgmt_route.takets = takets;
 
 	rc = sja1105_dynamic_config_write(priv, BLK_IDX_MGMT_ROUTE,
 					  slot, &mgmt_route, true);
@@ -1469,7 +1507,13 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 {
 	struct sja1105_private *priv = ds->priv;
 	struct sja1105_port *sp = &priv->ports[port];
+	struct skb_shared_hwtstamps shwt = {0};
 	int slot = sp->mgmt_slot;
+	struct sk_buff *clone;
+	struct timespec64 ts;
+	ktime_t orig_time;
+	int timeout = 10;
+	int rc;
 
 	/* The tragic fact about the switch having 4x2 slots for installing
 	 * management routes is that all of them except one are actually
@@ -1487,8 +1531,37 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 	 */
 	mutex_lock(&priv->mgmt_lock);
 
-	sja1105_mgmt_xmit(ds, port, slot, skb);
+	/* The clone, if there, was made by dsa_skb_tx_timestamp */
+	clone = DSA_SKB_CB(skb)->clone;
 
+	sja1105_mgmt_xmit(ds, port, slot, skb, !!clone);
+
+	if (!clone)
+		goto out;
+
+	orig_time = ktime_get();
+
+	skb_shinfo(clone)->tx_flags |= SKBTX_IN_PROGRESS;
+
+	do {
+		rc = sja1105_ptpegr_ts_poll(priv, slot, 0, orig_time, &ts);
+		if (rc < 0 && rc != -EAGAIN) {
+			dev_err(ds->dev, "xmit: failed to poll for tstamp\n");
+			kfree_skb(clone);
+			goto out;
+		}
+		usleep_range(10, 50);
+	} while (rc == -EAGAIN && --timeout);
+
+	if (!timeout)
+		dev_err(priv->ds->dev, "xmit: timed out polling for ts\n");
+
+	shwt.hwtstamp = ns_to_ktime(ts.tv_sec * NSEC_PER_SEC +
+				    ts.tv_nsec);
+	/*dev_err(priv->ds->dev, "txtstamp +%llu\n", shwt.hwtstamp);*/
+	skb_complete_tx_timestamp(clone, &shwt);
+
+out:
 	mutex_unlock(&priv->mgmt_lock);
 	return NETDEV_TX_OK;
 }
@@ -1517,6 +1590,184 @@ static int sja1105_set_ageing_time(struct dsa_switch *ds,
 	return sja1105_static_config_reload(priv);
 }
 
+static int sja1105_change_rxtstamping(struct sja1105_private *priv,
+				      bool on)
+{
+	struct sja1105_general_params_entry *general_params;
+	struct sja1105_table *table;
+	int rc;
+
+	table = &priv->static_config.tables[BLK_IDX_GENERAL_PARAMS];
+	general_params = table->entries;
+	general_params->send_meta1 = on;
+	general_params->send_meta0 = on;
+
+	rc = sja1105_init_avb_params(priv, on);
+	if (rc < 0)
+		return rc;
+
+	return sja1105_static_config_reload(priv);
+}
+
+static int sja1105_hwtstamp_set(struct dsa_switch *ds, int port,
+				struct ifreq *ifr)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct hwtstamp_config config;
+	bool rx_on;
+	int rc, i;
+
+	if (copy_from_user(&config, ifr->ifr_data, sizeof(config)))
+		return -EFAULT;
+
+	switch (config.tx_type) {
+	case HWTSTAMP_TX_OFF:
+		priv->ports[port].hwts_tx_en = false;
+		break;
+	case HWTSTAMP_TX_ON:
+		priv->ports[port].hwts_tx_en = true;
+		break;
+	default:
+		return -ERANGE;
+	}
+
+	switch (config.rx_filter) {
+	case HWTSTAMP_FILTER_NONE:
+		rx_on = false;
+		break;
+	default:
+		rx_on = true;
+		break;
+	}
+
+	if (rx_on != priv->hwts_rx_en) {
+		rc = sja1105_change_rxtstamping(priv, rx_on);
+		if (rc < 0) {
+			dev_err(ds->dev,
+				"Failed to change RX timestamping: %d\n", rc);
+			return -EFAULT;
+		}
+		priv->hwts_rx_en = rx_on;
+		/* Duplicate the setting to struct sja1105_port for
+		 * access from the tagger code
+		 */
+		for (i = 0; i < SJA1105_NUM_PORTS; i++)
+			priv->ports[i].hwts_rx_en = rx_on;
+	}
+
+	if (copy_to_user(ifr->ifr_data, &config, sizeof(config)))
+		return -EFAULT;
+	return 0;
+}
+
+static int sja1105_hwtstamp_get(struct dsa_switch *ds, int port,
+				struct ifreq *ifr)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct hwtstamp_config config;
+
+	config.flags = 0;
+	if (priv->ports[port].hwts_tx_en)
+		config.tx_type = HWTSTAMP_TX_ON;
+	else
+		config.tx_type = HWTSTAMP_TX_OFF;
+	if (priv->hwts_rx_en)
+		config.rx_filter = HWTSTAMP_FILTER_PTP_V2_L2_EVENT;
+	else
+		config.rx_filter = HWTSTAMP_FILTER_NONE;
+
+	return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ?
+		-EFAULT : 0;
+}
+
+static void sja1105_port_rxtstamp_work(struct work_struct *work)
+{
+	struct sja1105_port *sp = container_of(work, struct sja1105_port,
+					       rxtstamp_work);
+	struct dsa_switch *ds = sp->dp->ds;
+	struct sja1105_private *priv = ds->priv;
+	struct sk_buff *skb;
+
+	while ((skb = skb_dequeue(&sp->skb_rxtstamp_queue)) != NULL) {
+		struct skb_shared_hwtstamps *shwt = skb_hwtstamps(skb);
+		struct sja1105_skb_cb *cb = SJA1105_SKB_CB(skb);
+		struct timespec64 ts;
+		int timeout = 10;
+		int rc;
+
+		*shwt = (struct skb_shared_hwtstamps) {0};
+
+		do {
+			if (test_bit(SJA1105_STATE_META_ARRIVED, &cb->state))
+				break;
+			usleep_range(10, 50);
+		} while (--timeout);
+
+		if (!timeout) {
+			dev_err_ratelimited(ds->dev,
+					    "timed out waiting for meta frame\n");
+			goto rcv_anyway;
+		}
+
+		rc = sja1105_ptp_tstamp_reconstruct(priv, cb->meta_tstamp,
+						    cb->orig_time, &ts);
+		if (rc < 0)
+			goto rcv_anyway;
+
+		shwt->hwtstamp = ns_to_ktime(ts.tv_sec * NSEC_PER_SEC +
+					     ts.tv_nsec);
+rcv_anyway:
+		/*dev_err(ds->dev, "rxtstamp +%llu\n", shwt->hwtstamp);*/
+		netif_rx_ni(skb);
+	}
+}
+
+/* Called from dsa_skb_defer_rx_timestamp */
+bool sja1105_port_rxtstamp(struct dsa_switch *ds, int port,
+			   struct sk_buff *skb)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_port *sp = &priv->ports[port];
+
+	if (!priv->hwts_rx_en)
+		return false;
+
+	/* We need to read the full PTP clock to reconstruct the Rx
+	 * timestamp. For that we need a sleepable context.
+	 * Furthermore, we should enqueue the skb for timestamp
+	 * reconstruction only once its meta frame came.
+	 * A reference to this skb is also held in sp->last_stampable_skb.
+	 */
+	skb_queue_tail(&sp->skb_rxtstamp_queue, skb);
+	schedule_work(&sp->rxtstamp_work);
+	return true;
+}
+
+/* Called from dsa_skb_tx_timestamp. This callback is just to make DSA clone
+ * the skb and have it available in DSA_SKB_CB in the .port_deferred_xmit
+ * callback, where we will timestamp it synchronously.
+ */
+bool sja1105_port_txtstamp(struct dsa_switch *ds, int port,
+			   struct sk_buff *skb)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_port *sp = &priv->ports[port];
+
+	if (!sp->hwts_tx_en)
+		return false;
+
+	return true;
+}
+
+static void sja1105_port_disable(struct dsa_switch *ds, int port)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_port *sp = &priv->ports[port];
+
+	cancel_work_sync(&sp->rxtstamp_work);
+	skb_queue_purge(&sp->skb_rxtstamp_queue);
+}
+
 static const struct dsa_switch_ops sja1105_switch_ops = {
 	.get_tag_protocol	= sja1105_get_tag_protocol,
 	.setup			= sja1105_setup,
@@ -1527,6 +1778,7 @@ static const struct dsa_switch_ops sja1105_switch_ops = {
 	.get_ethtool_stats	= sja1105_get_ethtool_stats,
 	.get_sset_count		= sja1105_get_sset_count,
 	.get_ts_info		= sja1105_get_ts_info,
+	.port_disable		= sja1105_port_disable,
 	.port_fdb_dump		= sja1105_fdb_dump,
 	.port_fdb_add		= sja1105_fdb_add,
 	.port_fdb_del		= sja1105_fdb_del,
@@ -1541,6 +1793,10 @@ static const struct dsa_switch_ops sja1105_switch_ops = {
 	.port_mdb_add		= sja1105_mdb_add,
 	.port_mdb_del		= sja1105_mdb_del,
 	.port_deferred_xmit	= sja1105_port_deferred_xmit,
+	.port_hwtstamp_get	= sja1105_hwtstamp_get,
+	.port_hwtstamp_set	= sja1105_hwtstamp_set,
+	.port_rxtstamp		= sja1105_port_rxtstamp,
+	.port_txtstamp		= sja1105_port_txtstamp,
 };
 
 static int sja1105_check_device_id(struct sja1105_private *priv)
@@ -1641,6 +1897,8 @@ static int sja1105_probe(struct spi_device *spi)
 
 		ds->ports[i].priv = sp;
 		sp->dp = &ds->ports[i];
+		skb_queue_head_init(&sp->skb_rxtstamp_queue);
+		INIT_WORK(&sp->rxtstamp_work, sja1105_port_rxtstamp_work);
 	}
 	mutex_init(&priv->mgmt_lock);
 

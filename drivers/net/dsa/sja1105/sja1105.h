@@ -61,6 +61,11 @@ struct sja1105_info {
 	 * switch core and device_id)
 	 */
 	u64 part_no;
+	/* E/T and P/Q/R/S have partial timestamps of different sizes.
+	 * They must be reconstructed on both families anyway to get the full
+	 * 64-bit values back.
+	 */
+	int ptp_ts_bits;
 	const struct sja1105_dynamic_table_ops *dyn_ops;
 	const struct sja1105_table_ops *static_ops;
 	const struct sja1105_regs *regs;
@@ -80,12 +85,15 @@ struct sja1105_private {
 	struct dsa_switch *ds;
 	struct sja1105_port ports[SJA1105_NUM_PORTS];
 	enum sja1105_ptp_clk_mode ptp_mode;
+	bool ptp_tstamps_use_corrected_clk;
 	struct ptp_clock_info ptp_caps;
 	struct ptp_clock *clock;
 	/* Serializes transmission of management frames so that
 	 * the switch doesn't confuse them with one another.
 	 */
 	struct mutex mgmt_lock;
+	/* RX timestamping flag is global */
+	bool hwts_rx_en;
 };
 
 #include "sja1105_dynamic_config.h"

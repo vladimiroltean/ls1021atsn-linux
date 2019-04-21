@@ -20,13 +20,23 @@
 #define SJA1105_LINKLOCAL_FILTER_B		0x011B19000000ull
 #define SJA1105_LINKLOCAL_FILTER_B_MASK		0xFFFFFF000000ull
 
+/* Source and Destination MAC of follow-up meta frames */
+#define SJA1105_META_SMAC			0x222222222222ull
+#define SJA1105_META_DMAC			0x222222222222ull
+
+#define SJA1105_STATE_META_ARRIVED		0
+
 enum sja1105_frame_type {
 	SJA1105_FRAME_TYPE_NORMAL = 0,
 	SJA1105_FRAME_TYPE_LINK_LOCAL,
+	SJA1105_FRAME_TYPE_META,
 };
 
 struct sja1105_skb_cb {
 	enum sja1105_frame_type type;
+	unsigned long state;
+	ktime_t orig_time;
+	u32 meta_tstamp;
 };
 
 #define SJA1105_SKB_CB(skb) \
@@ -35,6 +45,12 @@ struct sja1105_skb_cb {
 struct sja1105_port {
 	struct dsa_port *dp;
 	int mgmt_slot;
+	bool hwts_tx_en;
+	bool hwts_rx_en;
+	bool expect_meta;
+	struct work_struct rxtstamp_work;
+	struct sk_buff *last_stampable_skb;
+	struct sk_buff_head skb_rxtstamp_queue;
 };
 
 #endif /* _NET_DSA_SJA1105_H */
