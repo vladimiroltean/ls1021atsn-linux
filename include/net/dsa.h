@@ -76,6 +76,7 @@ struct dsa_device_ops {
 	 * as regular on the master net device.
 	 */
 	bool (*filter)(const struct sk_buff *skb, struct net_device *dev);
+	bool (*can_tstamp)(const struct sk_buff *skb, struct net_device *dev);
 	unsigned int overhead;
 	const char *name;
 	enum dsa_tag_protocol proto;
@@ -87,6 +88,7 @@ struct dsa_device_ops {
 
 struct dsa_skb_cb {
 	struct sk_buff *clone;
+	unsigned int ptp_type;
 	bool deferred_xmit;
 };
 
@@ -534,9 +536,9 @@ struct dsa_switch_ops {
 	int	(*port_hwtstamp_set)(struct dsa_switch *ds, int port,
 				     struct ifreq *ifr);
 	bool	(*port_txtstamp)(struct dsa_switch *ds, int port,
-				 struct sk_buff *clone, unsigned int type);
+				 struct sk_buff *clone);
 	bool	(*port_rxtstamp)(struct dsa_switch *ds, int port,
-				 struct sk_buff *skb, unsigned int type);
+				 struct sk_buff *skb);
 
 	/*
 	 * Deferred frame Tx

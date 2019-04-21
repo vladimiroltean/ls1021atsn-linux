@@ -410,24 +410,32 @@ static inline netdev_tx_t dsa_slave_netpoll_send_skb(struct net_device *dev,
 }
 
 static void dsa_skb_tx_timestamp(struct dsa_slave_priv *p,
-				 struct sk_buff *skb)
+				 struct sk_buff *skb, struct net_device *dev)
 {
 	struct dsa_switch *ds = p->dp->ds;
 	struct sk_buff *clone;
-	unsigned int type;
 
-	type = ptp_classify_raw(skb);
-	if (type == PTP_CLASS_NONE)
+	if (!(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP))
 		return;
 
 	if (!ds->ops->port_txtstamp)
 		return;
 
+	DSA_SKB_CB(skb)->ptp_type = ptp_classify_raw(skb);
+
+	if (p->dp->cpu_dp->tag_ops->can_tstamp) {
+		if (!p->dp->cpu_dp->tag_ops->can_tstamp(skb, dev))
+			return;
+	} else {
+		if (DSA_SKB_CB(skb)->ptp_type == PTP_CLASS_NONE)
+			return;
+	}
+
 	clone = skb_clone_sk(skb);
 	if (!clone)
 		return;
 
-	if (ds->ops->port_txtstamp(ds, p->dp->index, clone, type))
+	if (ds->ops->port_txtstamp(ds, p->dp->index, clone))
 		return;
 
 	kfree_skb(clone);
@@ -468,7 +476,7 @@ static netdev_tx_t dsa_slave_xmit(struct sk_buff *skb, struct net_device *dev)
 	/* Identify PTP protocol packets, clone them, and pass them to the
 	 * switch driver
 	 */
-	dsa_skb_tx_timestamp(p, skb);
+	dsa_skb_tx_timestamp(p, skb, dev);
 
 	/* Transmit function may have to reallocate the original SKB,
 	 * in which case it must have freed it. Only free it here on error.
