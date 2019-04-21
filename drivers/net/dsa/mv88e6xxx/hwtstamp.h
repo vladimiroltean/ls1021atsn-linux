@@ -120,9 +120,9 @@ int mv88e6xxx_port_hwtstamp_get(struct dsa_switch *ds, int port,
 				struct ifreq *ifr);
 
 bool mv88e6xxx_port_rxtstamp(struct dsa_switch *ds, int port,
-			     struct sk_buff *clone, unsigned int type);
+			     struct sk_buff *clone);
 bool mv88e6xxx_port_txtstamp(struct dsa_switch *ds, int port,
-			     struct sk_buff *clone, unsigned int type);
+			     struct sk_buff *clone);
 
 int mv88e6xxx_get_ts_info(struct dsa_switch *ds, int port,
 			  struct ethtool_ts_info *info);

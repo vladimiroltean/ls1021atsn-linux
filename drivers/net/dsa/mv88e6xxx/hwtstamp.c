@@ -20,8 +20,6 @@
 #include "ptp.h"
 #include <linux/ptp_classify.h>
 
-#define SKB_PTP_TYPE(__skb) (*(unsigned int *)((__skb)->cb))
-
 static int mv88e6xxx_port_ptp_read(struct mv88e6xxx_chip *chip, int port,
 				   int addr, u16 *data, int len)
 {
@@ -216,8 +214,9 @@ int mv88e6xxx_port_hwtstamp_get(struct dsa_switch *ds, int port,
 }
 
 /* Get the start of the PTP header in this skb */
-static u8 *parse_ptp_header(struct sk_buff *skb, unsigned int type)
+static u8 *parse_ptp_header(struct sk_buff *skb)
 {
+	unsigned int type = DSA_SKB_CB(skb)->ptp_type;
 	u8 *data = skb_mac_header(skb);
 	unsigned int offset = 0;
 
@@ -249,7 +248,7 @@ static u8 *parse_ptp_header(struct sk_buff *skb, unsigned int type)
  * or NULL if the caller should not.
  */
 static u8 *mv88e6xxx_should_tstamp(struct mv88e6xxx_chip *chip, int port,
-				   struct sk_buff *skb, unsigned int type)
+				   struct sk_buff *skb)
 {
 	struct mv88e6xxx_port_hwtstamp *ps = &chip->port_hwtstamp[port];
 	u8 *hdr;
@@ -257,7 +256,7 @@ static u8 *mv88e6xxx_should_tstamp(struct mv88e6xxx_chip *chip, int port,
 	if (!chip->info->ptp_support)
 		return NULL;
 
-	hdr = parse_ptp_header(skb, type);
+	hdr = parse_ptp_header(skb);
 	if (!hdr)
 		return NULL;
 
@@ -278,8 +277,7 @@ static int mv88e6xxx_ts_valid(u16 status)
 
 static int seq_match(struct sk_buff *skb, u16 ts_seqid)
 {
-	unsigned int type = SKB_PTP_TYPE(skb);
-	u8 *hdr = parse_ptp_header(skb, type);
+	u8 *hdr = parse_ptp_header(skb);
 	__be16 *seqid;
 
 	seqid = (__be16 *)(hdr + OFF_PTP_SEQUENCE_ID);
@@ -367,7 +365,7 @@ static int is_pdelay_resp(u8 *msgtype)
 }
 
 bool mv88e6xxx_port_rxtstamp(struct dsa_switch *ds, int port,
-			     struct sk_buff *skb, unsigned int type)
+			     struct sk_buff *skb)
 {
 	struct mv88e6xxx_port_hwtstamp *ps;
 	struct mv88e6xxx_chip *chip;
@@ -379,11 +377,9 @@ bool mv88e6xxx_port_rxtstamp(struct dsa_switch *ds, int port,
 	if (ps->tstamp_config.rx_filter != HWTSTAMP_FILTER_PTP_V2_EVENT)
 		return false;
 
-	hdr = mv88e6xxx_should_tstamp(chip, port, skb, type);
+	hdr = mv88e6xxx_should_tstamp(chip, port, skb);
 	if (!hdr)
 		return false;
-
-	SKB_PTP_TYPE(skb) = type;
 
 	if (is_pdelay_resp(hdr))
 		skb_queue_tail(&ps->rx_queue2, skb);
@@ -503,17 +499,14 @@ long mv88e6xxx_hwtstamp_work(struct ptp_clock_info *ptp)
 }
 
 bool mv88e6xxx_port_txtstamp(struct dsa_switch *ds, int port,
-			     struct sk_buff *clone, unsigned int type)
+			     struct sk_buff *clone)
 {
 	struct mv88e6xxx_chip *chip = ds->priv;
 	struct mv88e6xxx_port_hwtstamp *ps = &chip->port_hwtstamp[port];
 	__be16 *seq_ptr;
 	u8 *hdr;
 
-	if (!(skb_shinfo(clone)->tx_flags & SKBTX_HW_TSTAMP))
-		return false;
-
-	hdr = mv88e6xxx_should_tstamp(chip, port, clone, type);
+	hdr = mv88e6xxx_should_tstamp(chip, port, clone);
 	if (!hdr)
 		return false;
 
