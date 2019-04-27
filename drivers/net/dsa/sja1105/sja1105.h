@@ -140,6 +140,8 @@ typedef enum {
 	XMII_MODE_MII		= 0,
 	XMII_MODE_RMII		= 1,
 	XMII_MODE_RGMII		= 2,
+	XMII_MODE_SGMII		= 3, /* Only available for port 4 on R/S */
+	XMII_MODE_TRISTATE	= 3,
 } sja1105_phy_interface_t;
 
 typedef enum {

@@ -15,6 +15,7 @@
 #define SJA1105_SIZE_VLAN_LOOKUP_ENTRY			8
 #define SJA1105_SIZE_L2_FORWARDING_ENTRY		8
 #define SJA1105_SIZE_L2_FORWARDING_PARAMS_ENTRY		12
+#define SJA1105_SIZE_SGMII_ENTRY			144
 #define SJA1105_SIZE_XMII_PARAMS_ENTRY			4
 #define SJA1105ET_SIZE_L2_LOOKUP_ENTRY			12
 #define SJA1105ET_SIZE_MAC_CONFIG_ENTRY			28
@@ -38,6 +39,7 @@ enum {
 	BLKID_L2_FORWARDING_PARAMS			= 0x0E,
 	BLKID_AVB_PARAMS				= 0x10,
 	BLKID_GENERAL_PARAMS				= 0x11,
+	BLKID_SGMII					= 0xC8,
 	BLKID_XMII_PARAMS				= 0x4E,
 };
 
@@ -51,6 +53,7 @@ enum sja1105_blk_idx {
 	BLK_IDX_L2_FORWARDING_PARAMS,
 	BLK_IDX_AVB_PARAMS,
 	BLK_IDX_GENERAL_PARAMS,
+	BLK_IDX_SGMII,
 	BLK_IDX_XMII_PARAMS,
 	BLK_IDX_MAX,
 	/* Fake block indices that are only valid for dynamic access */
@@ -67,6 +70,7 @@ enum sja1105_blk_idx {
 #define SJA1105_MAX_L2_LOOKUP_PARAMS_COUNT		1
 #define SJA1105_MAX_L2_FORWARDING_PARAMS_COUNT		1
 #define SJA1105_MAX_GENERAL_PARAMS_COUNT		1
+#define SJA1105_MAX_SGMII_COUNT				1
 #define SJA1105_MAX_XMII_PARAMS_COUNT			1
 #define SJA1105_MAX_AVB_PARAMS_COUNT			1
 
@@ -188,6 +192,17 @@ struct sja1105_mac_config_entry {
 struct sja1105_xmii_params_entry {
 	u64 phy_mac[5];
 	u64 xmii_mode[5];
+};
+
+struct sja1105_sgmii_entry {
+	u64 digital_error_cnt;
+	u64 digital_control_2;
+	u64 debug_control;
+	u64 test_control;
+	u64 autoneg_control;
+	u64 digital_control_1;
+	u64 autoneg_adv;
+	u64 basic_control;
 };
 
 struct sja1105_table_header {

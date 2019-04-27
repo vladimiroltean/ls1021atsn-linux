@@ -176,6 +176,9 @@ static int sja1105_init_mii_settings(struct sja1105_private *priv,
 		case PHY_INTERFACE_MODE_RGMII_TXID:
 			mii->xmii_mode[i] = XMII_MODE_RGMII;
 			break;
+		case PHY_INTERFACE_MODE_SGMII:
+			mii->xmii_mode[i] = XMII_MODE_SGMII;
+			break;
 		default:
 			dev_err(dev, "Unsupported PHY mode %s!\n",
 				phy_modes(ports[i].phy_mode));
@@ -755,8 +758,8 @@ static int sja1105_adjust_port_config(struct sja1105_private *priv, int port,
 	}
 
 	/* Reconfigure the PLLs for the RGMII interfaces (required 125 MHz at
-	 * gigabit, 25 MHz at 100 Mbps and 2.5 MHz at 10 Mbps). For MII and
-	 * RMII no change of the clock setup is required. Actually, changing
+	 * gigabit, 25 MHz at 100 Mbps and 2.5 MHz at 10 Mbps). For SGMII, MII
+	 * and RMII no change of the clock setup is required. Actually, changing
 	 * the clock setup does interrupt the clock signal for a certain time
 	 * which causes trouble for all PHYs relying on this signal.
 	 */
