@@ -88,6 +88,10 @@ static int sja1105_init_mac_settings(struct sja1105_private *priv)
 		.drpnona664 = false,
 		/* Don't drop double-tagged traffic */
 		.drpdtag = false,
+		/* Don't drop VLAN with single outer tag - P/Q/R/S only */
+		.drpsotag = false,
+		/* Don't drop VLAN with single inner tag - P/Q/R/S only */
+		.drpsitag = false,
 		/* Don't drop untagged traffic */
 		.drpuntag = false,
 		/* Don't retag 802.1p (VID 0) traffic with the pvid */
@@ -98,6 +102,11 @@ static int sja1105_init_mac_settings(struct sja1105_private *priv)
 		.dyn_learn = false,
 		.egress = false,
 		.ingress = false,
+		.mirrcie = 0,
+		.mirrcetag = 0,
+		.ingmirrvid = 0,
+		.ingmirrpcp = 0,
+		.ingmirrdei = 0,
 	};
 	struct sja1105_mac_config_entry *mac;
 	struct sja1105_table *table;
@@ -419,6 +428,12 @@ static int sja1105_init_general_params(struct sja1105_private *priv)
 		 */
 		.tpid = ETH_P_SJA1105,
 		.tpid2 = ETH_P_SJA1105,
+		/* P/Q/R/S only */
+		.queue_ts = 0,
+		.egrmirrvid = 0,
+		.egrmirrpcp = 0,
+		.egrmirrdei = 0,
+		.replay_port = 0,
 	};
 	struct sja1105_table *table;
 	int i, k = 0;

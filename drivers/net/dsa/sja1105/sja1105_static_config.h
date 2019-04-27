@@ -197,6 +197,13 @@ struct sja1105_vlan_lookup_entry {
 };
 
 struct sja1105_l2_lookup_entry {
+	u64 mirrvlan;      /* P/Q/R/S only - LOCKEDS=1 */
+	u64 mirr;          /* P/Q/R/S only - LOCKEDS=1 */
+	u64 retag;         /* P/Q/R/S only - LOCKEDS=1 */
+	u64 mask_iotag;    /* P/Q/R/S only */
+	u64 mask_vlanid;   /* P/Q/R/S only */
+	u64 mask_macaddr;  /* P/Q/R/S only */
+	u64 iotag;         /* P/Q/R/S only */
 	u64 vlanid;
 	u64 macaddr;
 	u64 destports;
@@ -205,6 +212,15 @@ struct sja1105_l2_lookup_entry {
 };
 
 struct sja1105_l2_lookup_params_entry {
+	u64 drpbc;           /* P/Q/R/S only */
+	u64 drpmc;           /* P/Q/R/S only */
+	u64 drpuni;          /* P/Q/R/S only */
+	u64 maxaddrp[5];     /* P/Q/R/S only */
+	u64 start_dynspc;    /* P/Q/R/S only */
+	u64 drpnolearn;      /* P/Q/R/S only */
+	u64 use_static;      /* P/Q/R/S only */
+	u64 owr_dyn;         /* P/Q/R/S only */
+	u64 learn_once;      /* P/Q/R/S only */
 	u64 maxage;          /* Shared */
 	u64 dyn_tbsz;        /* E/T only */
 	u64 poly;            /* E/T only */
@@ -234,6 +250,8 @@ struct sja1105_l2_policing_entry {
 };
 
 struct sja1105_avb_params_entry {
+	u64 l2cbs; /* only on P/Q/R/S */
+	u64 cas_master; /* only on P/Q/R/S */
 	u64 destmeta;
 	u64 srcmeta;
 };
@@ -253,11 +271,18 @@ struct sja1105_mac_config_entry {
 	u64 egr_mirr;
 	u64 drpnona664;
 	u64 drpdtag;
+	u64 drpsotag;   /* only on P/Q/R/S */
+	u64 drpsitag;   /* only on P/Q/R/S */
 	u64 drpuntag;
 	u64 retag;
 	u64 dyn_learn;
 	u64 egress;
 	u64 ingress;
+	u64 mirrcie;    /* only on P/Q/R/S */
+	u64 mirrcetag;  /* only on P/Q/R/S */
+	u64 ingmirrvid; /* only on P/Q/R/S */
+	u64 ingmirrpcp; /* only on P/Q/R/S */
+	u64 ingmirrdei; /* only on P/Q/R/S */
 };
 
 struct sja1105_xmii_params_entry {

@@ -54,10 +54,17 @@ struct sja1105_ptp_cmd {
 	u64 ptpstopsch;   /* stop schedule */
 	u64 startptpcp;   /* start pin toggle  */
 	u64 stopptpcp;    /* stop pin toggle */
+	u64 cassync;      /* if cascaded master, trigger a toggle of the
+			   * PTP_CLK pin, and store the timestamp of its
+			   * 1588 clock (ptpclk or ptptsclk, depending on
+			   * corrclk4ts), in ptpsyncts.
+			   * only for P/Q/R/S series
+			   */
 	u64 resptp;       /* reset */
 	u64 corrclk4ts;   /* if (1) timestamps are based on ptpclk,
 			   * if (0) timestamps are based on ptptsclk
 			   */
+	u64 ptpclksub;    /* only for P/Q/R/S series */
 	u64 ptpclkadd;    /* enum sja1105_ptp_clk_mode */
 };
 
@@ -110,8 +117,10 @@ sja1105pqrs_ptp_cmd_pack(void *buf, const struct sja1105_ptp_cmd *cmd)
 	sja1105_pack(buf, &cmd->ptpstopsch, 29, 29, size);
 	sja1105_pack(buf, &cmd->startptpcp, 28, 28, size);
 	sja1105_pack(buf, &cmd->stopptpcp,  27, 27, size);
+	sja1105_pack(buf, &cmd->cassync,    25, 25, size);
 	sja1105_pack(buf, &cmd->resptp,      3,  3, size);
 	sja1105_pack(buf, &cmd->corrclk4ts,  2,  2, size);
+	sja1105_pack(buf, &cmd->ptpclksub,   1,  1, size);
 	sja1105_pack(buf, &cmd->ptpclkadd,   0,  0, size);
 }
 

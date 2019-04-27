@@ -38,10 +38,12 @@ struct sja1105_cgu_idiv {
 struct sja1105_cgu_pll_ctrl {
 	u64 pllclksrc;
 	u64 msel;
+	u64 nsel; /* Only for P/Q/R/S series */
 	u64 autoblock;
 	u64 psel;
 	u64 direct;
 	u64 fbsel;
+	u64 p23en; /* Only for P/Q/R/S series */
 	u64 bypass;
 	u64 pd;
 };
@@ -300,6 +302,9 @@ sja1105_cgu_pll_control_packing(void *buf, struct sja1105_cgu_pll_ctrl *cmd,
 	sja1105_packing(buf, &cmd->fbsel,      6,  6, size, op);
 	sja1105_packing(buf, &cmd->bypass,     1,  1, size, op);
 	sja1105_packing(buf, &cmd->pd,         0,  0, size, op);
+	/* P/Q/R/S only, but packing zeroes for E/T doesn't hurt */
+	sja1105_packing(buf, &cmd->nsel,      13, 12, size, op);
+	sja1105_packing(buf, &cmd->p23en,      2,  2, size, op);
 }
 
 static int sja1105_cgu_rgmii_tx_clk_config(struct sja1105_private *priv,
@@ -499,6 +504,9 @@ static int sja1105_cgu_rmii_pll_config(struct sja1105_private *priv)
 	pll.fbsel     = 0x1;
 	pll.bypass    = 0x0;
 	pll.pd        = 0x1;
+	/* P/Q/R/S only */
+	pll.nsel      = 0x0; /* PLL pre-divider is 1 (nsel + 1) */
+	pll.p23en     = 0x0; /* disable 120 and 240 degree phase PLL outputs */
 
 	sja1105_cgu_pll_control_packing(packed_buf, &pll, PACK);
 	rc = sja1105_spi_send_packed_buf(priv, SPI_WRITE, regs->rmii_pll1,

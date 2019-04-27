@@ -108,6 +108,8 @@ static size_t sja1105pqrs_avb_params_entry_packing(void *buf, void *entry_ptr,
 	const size_t size = SJA1105PQRS_SIZE_AVB_PARAMS_ENTRY;
 	struct sja1105_avb_params_entry *entry = entry_ptr;
 
+	sja1105_packing(buf, &entry->l2cbs,      127, 127, size, op);
+	sja1105_packing(buf, &entry->cas_master, 126, 126, size, op);
 	sja1105_packing(buf, &entry->destmeta,   125,  78, size, op);
 	sja1105_packing(buf, &entry->srcmeta,     77,  30, size, op);
 	return size;
@@ -230,11 +232,23 @@ sja1105pqrs_l2_lookup_params_entry_packing(void *buf, void *entry_ptr,
 {
 	const size_t size = SJA1105PQRS_SIZE_L2_LOOKUP_PARAMS_ENTRY;
 	struct sja1105_l2_lookup_params_entry *entry = entry_ptr;
+	int offset, i;
 
+	sja1105_packing(buf, &entry->drpbc,         127, 123, size, op);
+	sja1105_packing(buf, &entry->drpmc,         122, 118, size, op);
+	sja1105_packing(buf, &entry->drpuni,        117, 113, size, op);
+	for (i = 0, offset = 58; i < 5; i++, offset += 11)
+		sja1105_packing(buf, &entry->maxaddrp[i],
+				offset + 10, offset + 0, size, op);
 	sja1105_packing(buf, &entry->maxage,         57,  43, size, op);
+	sja1105_packing(buf, &entry->start_dynspc,   42,  33, size, op);
+	sja1105_packing(buf, &entry->drpnolearn,     32,  28, size, op);
 	sja1105_packing(buf, &entry->shared_learn,   27,  27, size, op);
 	sja1105_packing(buf, &entry->no_enf_hostprt, 26,  26, size, op);
 	sja1105_packing(buf, &entry->no_mgmt_learn,  25,  25, size, op);
+	sja1105_packing(buf, &entry->use_static,     24,  24, size, op);
+	sja1105_packing(buf, &entry->owr_dyn,        23,  23, size, op);
+	sja1105_packing(buf, &entry->learn_once,     22,  22, size, op);
 	return size;
 }
 
@@ -262,6 +276,13 @@ size_t sja1105pqrs_l2_lookup_entry_packing(void *buf, void *entry_ptr,
 	 * should match UM11040 Table 16/17 definitions when
 	 * LOCKEDS is 1.
 	 */
+	sja1105_packing(buf, &entry->mirrvlan,     158, 147, size, op);
+	sja1105_packing(buf, &entry->mirr,         145, 145, size, op);
+	sja1105_packing(buf, &entry->retag,        144, 144, size, op);
+	sja1105_packing(buf, &entry->mask_iotag,   143, 143, size, op);
+	sja1105_packing(buf, &entry->mask_vlanid,  142, 131, size, op);
+	sja1105_packing(buf, &entry->mask_macaddr, 130,  83, size, op);
+	sja1105_packing(buf, &entry->iotag,         82,  82, size, op);
 	sja1105_packing(buf, &entry->vlanid,        81,  70, size, op);
 	sja1105_packing(buf, &entry->macaddr,       69,  22, size, op);
 	sja1105_packing(buf, &entry->destports,     21,  17, size, op);
@@ -344,11 +365,18 @@ size_t sja1105pqrs_mac_config_entry_packing(void *buf, void *entry_ptr,
 	sja1105_packing(buf, &entry->egr_mirr,   40, 40, size, op);
 	sja1105_packing(buf, &entry->drpnona664, 39, 39, size, op);
 	sja1105_packing(buf, &entry->drpdtag,    38, 38, size, op);
+	sja1105_packing(buf, &entry->drpsotag,   37, 37, size, op);
+	sja1105_packing(buf, &entry->drpsitag,   36, 36, size, op);
 	sja1105_packing(buf, &entry->drpuntag,   35, 35, size, op);
 	sja1105_packing(buf, &entry->retag,      34, 34, size, op);
 	sja1105_packing(buf, &entry->dyn_learn,  33, 33, size, op);
 	sja1105_packing(buf, &entry->egress,     32, 32, size, op);
 	sja1105_packing(buf, &entry->ingress,    31, 31, size, op);
+	sja1105_packing(buf, &entry->mirrcie,    30, 30, size, op);
+	sja1105_packing(buf, &entry->mirrcetag,  29, 29, size, op);
+	sja1105_packing(buf, &entry->ingmirrvid, 28, 17, size, op);
+	sja1105_packing(buf, &entry->ingmirrpcp, 16, 14, size, op);
+	sja1105_packing(buf, &entry->ingmirrdei, 13, 13, size, op);
 	return size;
 }
 
