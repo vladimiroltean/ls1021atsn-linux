@@ -658,6 +658,64 @@ static u64 blk_id_map[BLK_IDX_MAX] = {
 	[BLK_IDX_SGMII] = BLKID_SGMII,
 };
 
+static enum sja1105_blk_idx blk_idx_from_blk_id(u64 block_id)
+{
+	enum sja1105_blk_idx blk_idx;
+
+	if (block_id > BLKID_MAX)
+		return BLK_IDX_INVAL;
+
+	for (blk_idx = 0; blk_idx < BLK_IDX_MAX; blk_idx++)
+		if (blk_id_map[blk_idx] == block_id)
+			return blk_idx;
+
+	return BLK_IDX_INVAL;
+}
+
+static ssize_t
+sja1105_table_add_entry(struct sja1105_table *table, const void *buf)
+{
+	void *entry_ptr;
+
+	if (table->entry_count >= table->ops->max_entry_count)
+		return -ERANGE;
+
+	entry_ptr = table->entries;
+	entry_ptr += (uintptr_t)table->ops->unpacked_entry_size *
+				table->entry_count;
+
+	table->entry_count++;
+
+	memset(entry_ptr, 0, table->ops->unpacked_entry_size);
+
+	/* Discard const pointer due to common implementation
+	 * of PACK and UNPACK.
+	 */
+	return table->ops->packing((void *)buf, entry_ptr, UNPACK);
+}
+
+/* This is needed so that all information needed for
+ * sja1105_vl_lookup_entry_packing is self-contained within
+ * the structure and does not depend upon the general_params_table.
+ */
+static void
+sja1105_static_config_patch_vllupformat(struct sja1105_static_config *config)
+{
+	struct sja1105_vl_lookup_entry *vl_lookup_entries;
+	struct sja1105_general_params_entry *general_params_entries;
+	struct sja1105_table *tables = config->tables;
+	u64 vllupformat;
+	int i;
+
+	vl_lookup_entries = tables[BLK_IDX_VL_LOOKUP].entries;
+	general_params_entries = tables[BLK_IDX_GENERAL_PARAMS].entries;
+
+	vllupformat = general_params_entries[0].vllupformat;
+
+	for (i = 0; i < tables[BLK_IDX_VL_LOOKUP].entry_count; i++)
+		vl_lookup_entries[i].format = vllupformat;
+}
+
 const char *sja1105_static_config_error_msg[] = {
 	[SJA1105_CONFIG_OK] = "",
 	[SJA1105_TTETHERNET_NOT_SUPPORTED] =
@@ -684,6 +742,8 @@ const char *sja1105_static_config_error_msg[] = {
 		"xmii-table is missing",
 	[SJA1105_MISSING_MAC_TABLE] =
 		"mac-configuration-table needs to contain an entry for each port",
+	[SJA1105_DEVICE_ID_INVALID] =
+		"Device ID present in the static config is invalid",
 	[SJA1105_OVERCOMMITTED_FRAME_MEMORY] =
 		"Not allowed to overcommit frame memory. L2 memory partitions "
 		"and VL memory partitions share the same space. The sum of all "
@@ -691,6 +751,21 @@ const char *sja1105_static_config_error_msg[] = {
 		"128-byte blocks (or 910 with retagging). Please adjust "
 		"l2-forwarding-parameters-table.part_spc and/or "
 		"vl-forwarding-parameters-table.partspc.",
+	[SJA1105_UNEXPECTED_END_OF_BUFFER] =
+		"Unexpected end of buffer",
+	[SJA1105_INVALID_DEVICE_ID] =
+		"Invalid device ID present in static config",
+	[SJA1105_INVALID_TABLE_HEADER_CRC] =
+		"One of the table headers has an incorrect CRC",
+	[SJA1105_INVALID_TABLE_HEADER] =
+		"One of the table headers contains an invalid block id",
+	[SJA1105_INCORRECT_TABLE_LENGTH] =
+		"The data length specified in one of the table headers is "
+		"longer than the actual size of the entries that were parsed",
+	[SJA1105_DATA_CRC_INVALID] =
+		"One of the tables has an incorrect CRC over the data area",
+	[SJA1105_EXTRA_BYTES_AT_END_OF_BUFFER] =
+		"Extra bytes found at the end of buffer after parsing it",
 };
 
 sja1105_config_valid_t
@@ -777,6 +852,114 @@ sja1105_static_config_check_valid(const struct sja1105_static_config *config)
 
 	return static_config_check_memory_size(tables);
 #undef IS_FULL
+}
+
+sja1105_config_valid_t
+sja1105_static_config_unpack(const void *buf, ssize_t buf_len,
+			     struct sja1105_static_config *config)
+{
+	struct sja1105_table_header hdr;
+	enum sja1105_blk_idx blk_idx;
+	struct sja1105_table *table;
+	u64 computed_crc, read_crc;
+	int expected_entry_count;
+	const u8 *table_end;
+	const u8 *p = buf;
+	int bytes;
+
+	/* Guard memory access to buffer */
+	if (buf_len >= 4)
+		buf_len -= 4;
+	else
+		return SJA1105_UNEXPECTED_END_OF_BUFFER;
+
+	/* Retrieve device_id from first 4 bytes of packed buffer */
+	sja1105_unpack(p, &config->device_id, 31, 0, 4);
+	if (config->device_id != SJA1105E_DEVICE_ID &&
+	    config->device_id != SJA1105T_DEVICE_ID &&
+	    config->device_id != SJA1105PR_DEVICE_ID &&
+	    config->device_id != SJA1105QS_DEVICE_ID)
+		return SJA1105_INVALID_DEVICE_ID;
+
+	p += SJA1105_SIZE_DEVICE_ID;
+
+	while (1) {
+		/* Guard memory access to buffer */
+		if (buf_len >= SJA1105_SIZE_TABLE_HEADER)
+			buf_len -= SJA1105_SIZE_TABLE_HEADER;
+		else
+			return SJA1105_UNEXPECTED_END_OF_BUFFER;
+
+		/* Discard const pointer due to common implementation
+		 * of PACK and UNPACK.
+		 */
+		hdr = (struct sja1105_table_header) {0};
+		sja1105_table_header_packing((void *)p, &hdr, UNPACK);
+
+		/* This should match on last table header */
+		if (hdr.len == 0)
+			break;
+
+		computed_crc = sja1105_crc32(p, SJA1105_SIZE_TABLE_HEADER - 4);
+		computed_crc &= 0xFFFFFFFF;
+		read_crc = hdr.crc & 0xFFFFFFFF;
+		if (read_crc != computed_crc)
+			return SJA1105_INVALID_TABLE_HEADER_CRC;
+
+		p += SJA1105_SIZE_TABLE_HEADER;
+
+		/* Guard memory access to buffer */
+		if (buf_len >= (ssize_t)hdr.len * 4)
+			buf_len -= (ssize_t)hdr.len * 4;
+		else
+			return SJA1105_UNEXPECTED_END_OF_BUFFER;
+
+		table_end = p + hdr.len * 4;
+		computed_crc = sja1105_crc32(p, hdr.len * 4);
+
+		blk_idx = blk_idx_from_blk_id(hdr.block_id);
+		if (blk_idx == BLK_IDX_INVAL)
+			return -EINVAL;
+		table = &config->tables[blk_idx];
+		/* Detected duplicate table headers with the same block id */
+		if (table->entry_count)
+			return -EINVAL;
+
+		expected_entry_count = hdr.len * 4;
+		expected_entry_count /= table->ops->packed_entry_size;
+		table->entries = kcalloc(expected_entry_count,
+					 table->ops->unpacked_entry_size,
+					 GFP_KERNEL);
+		if (!table->entries)
+			return -ENOMEM;
+
+		while (p < table_end) {
+			bytes = sja1105_table_add_entry(table, p);
+			if (bytes < 0)
+				return SJA1105_INVALID_TABLE_HEADER;
+			p += bytes;
+		}
+		if (p != table_end)
+			/* Incorrect table length for this block id:
+			 * table data has (table_end - p) extra bytes.
+			 */
+			return SJA1105_INCORRECT_TABLE_LENGTH;
+		/* Guard memory access to buffer */
+		if (buf_len >= 4)
+			buf_len -= 4;
+		else
+			return SJA1105_UNEXPECTED_END_OF_BUFFER;
+
+		sja1105_unpack(p, &read_crc, 31, 0, 4);
+		p += 4;
+		if (computed_crc != read_crc)
+			return SJA1105_DATA_CRC_INVALID;
+	}
+	if (buf_len)
+		return SJA1105_EXTRA_BYTES_AT_END_OF_BUFFER;
+
+	sja1105_static_config_patch_vllupformat(config);
+	return SJA1105_CONFIG_OK;
 }
 
 void
