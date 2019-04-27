@@ -13,6 +13,7 @@
  */
 #include <linux/clk-provider.h>
 #include <linux/clocksource.h>
+#include <linux/clockchips.h>
 #include <linux/errno.h>
 #include <linux/export.h>
 #include <linux/init.h>
@@ -109,6 +110,7 @@ void __init time_init(void)
 #ifdef CONFIG_COMMON_CLK
 		of_clk_init(NULL);
 #endif
+		tick_setup_hrtimer_broadcast();
 		timer_probe();
 	}
 }
