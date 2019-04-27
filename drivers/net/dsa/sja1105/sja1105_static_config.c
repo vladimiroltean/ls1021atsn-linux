@@ -352,6 +352,63 @@ size_t sja1105pqrs_mac_config_entry_packing(void *buf, void *entry_ptr,
 	return size;
 }
 
+static size_t
+sja1105_schedule_entry_points_params_entry_packing(void *buf, void *entry_ptr,
+						   enum packing_op op)
+{
+	struct sja1105_schedule_entry_points_params_entry *entry = entry_ptr;
+	const size_t size = SJA1105_SIZE_SCHEDULE_ENTRY_POINTS_PARAMS_ENTRY;
+
+	sja1105_packing(buf, &entry->clksrc,    31, 30, size, op);
+	sja1105_packing(buf, &entry->actsubsch, 29, 27, size, op);
+	return size;
+}
+
+static size_t
+sja1105_schedule_entry_points_entry_packing(void *buf, void *entry_ptr,
+					    enum packing_op op)
+{
+	struct sja1105_schedule_entry_points_entry *entry = entry_ptr;
+	const size_t size = SJA1105_SIZE_SCHEDULE_ENTRY_POINTS_ENTRY;
+
+	sja1105_packing(buf, &entry->subschindx, 31, 29, size, op);
+	sja1105_packing(buf, &entry->delta,      28, 11, size, op);
+	sja1105_packing(buf, &entry->address,    10, 1,  size, op);
+	return size;
+}
+
+static size_t sja1105_schedule_params_entry_packing(void *buf, void *entry_ptr,
+						    enum packing_op op)
+{
+	const size_t size = SJA1105_SIZE_SCHEDULE_PARAMS_ENTRY;
+	struct sja1105_schedule_params_entry *entry = entry_ptr;
+	int offset, i;
+
+	for (i = 0, offset = 16; i < 8; i++, offset += 10)
+		sja1105_packing(buf, &entry->subscheind[i],
+				offset + 9, offset + 0, size, op);
+	return size;
+}
+
+static size_t sja1105_schedule_entry_packing(void *buf, void *entry_ptr,
+					     enum packing_op op)
+{
+	const size_t size = SJA1105_SIZE_SCHEDULE_ENTRY;
+	struct sja1105_schedule_entry *entry = entry_ptr;
+
+	sja1105_packing(buf, &entry->winstindex,  63, 54, size, op);
+	sja1105_packing(buf, &entry->winend,      53, 53, size, op);
+	sja1105_packing(buf, &entry->winst,       52, 52, size, op);
+	sja1105_packing(buf, &entry->destports,   51, 47, size, op);
+	sja1105_packing(buf, &entry->setvalid,    46, 46, size, op);
+	sja1105_packing(buf, &entry->txen,        45, 45, size, op);
+	sja1105_packing(buf, &entry->resmedia_en, 44, 44, size, op);
+	sja1105_packing(buf, &entry->resmedia,    43, 36, size, op);
+	sja1105_packing(buf, &entry->vlindex,     35, 26, size, op);
+	sja1105_packing(buf, &entry->delta,       25, 8,  size, op);
+	return size;
+}
+
 static size_t sja1105_sgmii_entry_packing(void *buf, void *entry_ptr,
 					  enum packing_op op)
 {
@@ -409,6 +466,84 @@ static size_t sja1105_sgmii_entry_packing(void *buf, void *entry_ptr,
 	return size;
 }
 
+static size_t
+sja1105_vl_forwarding_params_entry_packing(void *buf, void *entry_ptr,
+					   enum packing_op op)
+{
+	const size_t size = SJA1105_SIZE_VL_FORWARDING_PARAMS_ENTRY;
+	struct sja1105_vl_forwarding_params_entry *entry = entry_ptr;
+	int offset, i;
+
+	for (i = 0, offset = 16; i < 8; i++, offset += 10)
+		sja1105_packing(buf, &entry->partspc[i],
+				offset + 9, offset + 0, size, op);
+	sja1105_packing(buf, &entry->debugen, 15, 15, size, op);
+	return size;
+}
+
+static size_t sja1105_vl_forwarding_entry_packing(void *buf, void *entry_ptr,
+						  enum packing_op op)
+{
+	const size_t size = SJA1105_SIZE_VL_FORWARDING_ENTRY;
+	struct sja1105_vl_forwarding_entry *entry = entry_ptr;
+
+	sja1105_packing(buf, &entry->type,      31, 31, size, op);
+	sja1105_packing(buf, &entry->priority,  30, 28, size, op);
+	sja1105_packing(buf, &entry->partition, 27, 25, size, op);
+	sja1105_packing(buf, &entry->destports, 24, 20, size, op);
+	return size;
+}
+
+size_t sja1105_vl_lookup_entry_packing(void *buf, void *entry_ptr,
+				       enum packing_op op)
+{
+	const size_t size = SJA1105_SIZE_VL_LOOKUP_ENTRY;
+	struct sja1105_vl_lookup_entry *entry = entry_ptr;
+
+	if (entry->format == 0) {
+		/* Interpreting vllupformat as 0 */
+		sja1105_packing(buf, &entry->destports,
+				95, 91, size, op);
+		sja1105_packing(buf, &entry->iscritical,
+				90, 90, size, op);
+		sja1105_packing(buf, &entry->macaddr,
+				89, 42, size, op);
+		sja1105_packing(buf, &entry->vlanid,
+				41, 30, size, op);
+		sja1105_packing(buf, &entry->port,
+				29, 27, size, op);
+		sja1105_packing(buf, &entry->vlanprior,
+				26, 24, size, op);
+	} else {
+		/* Interpreting vllupformat as 1 */
+		sja1105_packing(buf, &entry->egrmirr,
+				95, 91, size, op);
+		sja1105_packing(buf, &entry->ingrmirr,
+				90, 90, size, op);
+		sja1105_packing(buf, &entry->vlid,
+				57, 42, size, op);
+		sja1105_packing(buf, &entry->port,
+				29, 27, size, op);
+	}
+	return size;
+}
+
+static size_t sja1105_vl_policing_entry_packing(void *buf, void *entry_ptr,
+						enum packing_op op)
+{
+	const size_t size = SJA1105_SIZE_VL_POLICING_ENTRY;
+	struct sja1105_vl_policing_entry *entry = entry_ptr;
+
+	sja1105_packing(buf, &entry->type,      63, 63, size, op);
+	sja1105_packing(buf, &entry->maxlen,    62, 52, size, op);
+	sja1105_packing(buf, &entry->sharindx,  51, 42, size, op);
+	if (entry->type == 0) {
+		sja1105_packing(buf, &entry->bag,    41, 28, size, op);
+		sja1105_packing(buf, &entry->jitter, 27, 18, size, op);
+	}
+	return size;
+}
+
 size_t sja1105_vlan_lookup_entry_packing(void *buf, void *entry_ptr,
 					 enum packing_op op)
 {
@@ -421,6 +556,21 @@ size_t sja1105_vlan_lookup_entry_packing(void *buf, void *entry_ptr,
 	sja1105_packing(buf, &entry->vlan_bc,    48, 44, size, op);
 	sja1105_packing(buf, &entry->tag_port,   43, 39, size, op);
 	sja1105_packing(buf, &entry->vlanid,     38, 27, size, op);
+	return size;
+}
+
+size_t sja1105_retagging_entry_packing(void *buf, void *entry_ptr,
+				       enum packing_op op)
+{
+	const size_t size = SJA1105_SIZE_RETAGGING_ENTRY;
+	struct sja1105_retagging_entry *entry = entry_ptr;
+
+	sja1105_packing(buf, &entry->egr_port,     63, 59, size, op);
+	sja1105_packing(buf, &entry->ing_port,     58, 54, size, op);
+	sja1105_packing(buf, &entry->vlan_ing,     53, 42, size, op);
+	sja1105_packing(buf, &entry->vlan_egr,     41, 30, size, op);
+	sja1105_packing(buf, &entry->do_not_learn, 29, 29, size, op);
+	sja1105_packing(buf, &entry->destports,    27, 23, size, op);
 	return size;
 }
 
@@ -485,21 +635,41 @@ static void sja1105_table_write_crc(u8 *table_start, u8 *crc_ptr)
  * before blindly indexing kernel memory with the blk_idx.
  */
 static u64 blk_id_map[BLK_IDX_MAX] = {
+	[BLK_IDX_SCHEDULE] = BLKID_SCHEDULE,
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS] = BLKID_SCHEDULE_ENTRY_POINTS,
+	[BLK_IDX_VL_LOOKUP] = BLKID_VL_LOOKUP,
+	[BLK_IDX_VL_POLICING] = BLKID_VL_POLICING,
+	[BLK_IDX_VL_FORWARDING] = BLKID_VL_FORWARDING,
 	[BLK_IDX_L2_LOOKUP] = BLKID_L2_LOOKUP,
 	[BLK_IDX_L2_POLICING] = BLKID_L2_POLICING,
 	[BLK_IDX_VLAN_LOOKUP] = BLKID_VLAN_LOOKUP,
 	[BLK_IDX_L2_FORWARDING] = BLKID_L2_FORWARDING,
 	[BLK_IDX_MAC_CONFIG] = BLKID_MAC_CONFIG,
+	[BLK_IDX_SCHEDULE_PARAMS] = BLKID_SCHEDULE_PARAMS,
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS] = BLKID_SCHEDULE_ENTRY_POINTS_PARAMS,
+	[BLK_IDX_VL_FORWARDING_PARAMS] = BLKID_VL_FORWARDING_PARAMS,
 	[BLK_IDX_L2_LOOKUP_PARAMS] = BLKID_L2_LOOKUP_PARAMS,
 	[BLK_IDX_L2_FORWARDING_PARAMS] = BLKID_L2_FORWARDING_PARAMS,
+	[BLK_IDX_CLK_SYNC_PARAMS] = BLKID_CLK_SYNC_PARAMS,
 	[BLK_IDX_AVB_PARAMS] = BLKID_AVB_PARAMS,
 	[BLK_IDX_GENERAL_PARAMS] = BLKID_GENERAL_PARAMS,
+	[BLK_IDX_RETAGGING] = BLKID_RETAGGING,
 	[BLK_IDX_XMII_PARAMS] = BLKID_XMII_PARAMS,
 	[BLK_IDX_SGMII] = BLKID_SGMII,
 };
 
 const char *sja1105_static_config_error_msg[] = {
 	[SJA1105_CONFIG_OK] = "",
+	[SJA1105_TTETHERNET_NOT_SUPPORTED] =
+		"schedule-table present, but TTEthernet is "
+		"only supported on T and Q/S",
+	[SJA1105_INCORRECT_TTETHERNET_CONFIGURATION] =
+		"schedule-table present, but one of "
+		"schedule-entry-points-table, schedule-parameters-table or "
+		"schedule-entry-points-parameters table is empty",
+	[SJA1105_INCORRECT_VIRTUAL_LINK_CONFIGURATION] =
+		"vl-lookup-table present, but one of vl-policing-table, "
+		"vl-forwarding-table or vl-forwarding-parameters-table is empty",
 	[SJA1105_MISSING_L2_POLICING_TABLE] =
 		"l2-policing-table needs to have at least one entry",
 	[SJA1105_MISSING_L2_FORWARDING_TABLE] =
@@ -527,14 +697,26 @@ sja1105_config_valid_t
 static_config_check_memory_size(const struct sja1105_table *tables)
 {
 	const struct sja1105_l2_forwarding_params_entry *l2_fwd_params;
-	int i, mem = 0;
+	const struct sja1105_vl_forwarding_params_entry *vl_fwd_params;
+	int i, max_mem, mem = 0;
 
 	l2_fwd_params = tables[BLK_IDX_L2_FORWARDING_PARAMS].entries;
 
 	for (i = 0; i < 8; i++)
 		mem += l2_fwd_params->part_spc[i];
 
-	if (mem > SJA1105_MAX_FRAME_MEMORY)
+	if (tables[BLK_IDX_VL_FORWARDING_PARAMS].entry_count) {
+		vl_fwd_params = tables[BLK_IDX_VL_FORWARDING_PARAMS].entries;
+		for (i = 0; i < 8; i++)
+			mem += vl_fwd_params->partspc[i];
+	}
+
+	if (tables[BLK_IDX_RETAGGING].entry_count)
+		max_mem = SJA1105_MAX_FRAME_MEMORY_RETAGGING;
+	else
+		max_mem = SJA1105_MAX_FRAME_MEMORY;
+
+	if (mem > max_mem)
 		return SJA1105_OVERCOMMITTED_FRAME_MEMORY;
 
 	return SJA1105_CONFIG_OK;
@@ -546,6 +728,31 @@ sja1105_static_config_check_valid(const struct sja1105_static_config *config)
 	const struct sja1105_table *tables = config->tables;
 #define IS_FULL(blk_idx) \
 	(tables[blk_idx].entry_count == tables[blk_idx].ops->max_entry_count)
+
+	if (tables[BLK_IDX_SCHEDULE].entry_count) {
+		if (config->device_id != SJA1105T_DEVICE_ID &&
+		    config->device_id != SJA1105QS_DEVICE_ID)
+			return SJA1105_TTETHERNET_NOT_SUPPORTED;
+
+		if (!IS_FULL(BLK_IDX_SCHEDULE_ENTRY_POINTS))
+			return SJA1105_INCORRECT_TTETHERNET_CONFIGURATION;
+
+		if (!IS_FULL(BLK_IDX_SCHEDULE_PARAMS))
+			return SJA1105_INCORRECT_TTETHERNET_CONFIGURATION;
+
+		if (!IS_FULL(BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS))
+			return SJA1105_INCORRECT_TTETHERNET_CONFIGURATION;
+	}
+	if (tables[BLK_IDX_VL_LOOKUP].entry_count) {
+		if (tables[BLK_IDX_VL_POLICING].entry_count == 0)
+			return SJA1105_INCORRECT_VIRTUAL_LINK_CONFIGURATION;
+
+		if (tables[BLK_IDX_VL_FORWARDING].entry_count == 0)
+			return SJA1105_INCORRECT_VIRTUAL_LINK_CONFIGURATION;
+
+		if (!IS_FULL(BLK_IDX_VL_FORWARDING_PARAMS))
+			return SJA1105_INCORRECT_VIRTUAL_LINK_CONFIGURATION;
+	}
 
 	if (tables[BLK_IDX_L2_POLICING].entry_count == 0)
 		return SJA1105_MISSING_L2_POLICING_TABLE;
@@ -653,6 +860,11 @@ sja1105_static_config_get_length(const struct sja1105_static_config *config)
 
 /* SJA1105E: First generation, no TTEthernet */
 struct sja1105_table_ops sja1105e_table_ops[BLK_IDX_MAX] = {
+	[BLK_IDX_SCHEDULE] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS] = {0},
+	[BLK_IDX_VL_LOOKUP] = {0},
+	[BLK_IDX_VL_POLICING] = {0},
+	[BLK_IDX_VL_FORWARDING] = {0},
 	[BLK_IDX_L2_LOOKUP] = {
 		.packing = sja1105et_l2_lookup_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_entry),
@@ -683,6 +895,9 @@ struct sja1105_table_ops sja1105e_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105ET_SIZE_MAC_CONFIG_ENTRY,
 		.max_entry_count = SJA1105_MAX_MAC_CONFIG_COUNT,
 	},
+	[BLK_IDX_SCHEDULE_PARAMS] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS] = {0},
+	[BLK_IDX_VL_FORWARDING_PARAMS] = {0},
 	[BLK_IDX_L2_LOOKUP_PARAMS] = {
 		.packing = sja1105et_l2_lookup_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_params_entry),
@@ -695,6 +910,7 @@ struct sja1105_table_ops sja1105e_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105_SIZE_L2_FORWARDING_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_L2_FORWARDING_PARAMS_COUNT,
 	},
+	[BLK_IDX_CLK_SYNC_PARAMS] = {0},
 	[BLK_IDX_AVB_PARAMS] = {
 		.packing = sja1105et_avb_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_avb_params_entry),
@@ -706,6 +922,12 @@ struct sja1105_table_ops sja1105e_table_ops[BLK_IDX_MAX] = {
 		.unpacked_entry_size = sizeof(struct sja1105_general_params_entry),
 		.packed_entry_size = SJA1105ET_SIZE_GENERAL_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_GENERAL_PARAMS_COUNT,
+	},
+	[BLK_IDX_RETAGGING] = {
+		.packing = sja1105_retagging_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_retagging_entry),
+		.packed_entry_size = SJA1105_SIZE_RETAGGING_ENTRY,
+		.max_entry_count = SJA1105_MAX_RETAGGING_COUNT,
 	},
 	[BLK_IDX_XMII_PARAMS] = {
 		.packing = sja1105_xmii_params_entry_packing,
@@ -718,6 +940,36 @@ struct sja1105_table_ops sja1105e_table_ops[BLK_IDX_MAX] = {
 
 /* SJA1105T: First generation, TTEthernet */
 struct sja1105_table_ops sja1105t_table_ops[BLK_IDX_MAX] = {
+	[BLK_IDX_SCHEDULE] = {
+		.packing = sja1105_schedule_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_COUNT,
+	},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS] = {
+		.packing = sja1105_schedule_entry_points_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_entry_points_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_ENTRY_POINTS_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_ENTRY_POINTS_COUNT,
+	},
+	[BLK_IDX_VL_LOOKUP] = {
+		.packing = sja1105_vl_lookup_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_lookup_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_LOOKUP_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_LOOKUP_COUNT,
+	},
+	[BLK_IDX_VL_POLICING] = {
+		.packing = sja1105_vl_policing_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_policing_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_POLICING_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_POLICING_COUNT,
+	},
+	[BLK_IDX_VL_FORWARDING] = {
+		.packing = sja1105_vl_forwarding_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_forwarding_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_FORWARDING_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_FORWARDING_COUNT,
+	},
 	[BLK_IDX_L2_LOOKUP] = {
 		.packing = sja1105et_l2_lookup_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_entry),
@@ -748,6 +1000,24 @@ struct sja1105_table_ops sja1105t_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105ET_SIZE_MAC_CONFIG_ENTRY,
 		.max_entry_count = SJA1105_MAX_MAC_CONFIG_COUNT,
 	},
+	[BLK_IDX_SCHEDULE_PARAMS] = {
+		.packing = sja1105_schedule_params_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_params_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_PARAMS_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_PARAMS_COUNT,
+	},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS] = {
+		.packing = sja1105_schedule_entry_points_params_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_entry_points_params_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_ENTRY_POINTS_PARAMS_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_ENTRY_POINTS_PARAMS_COUNT,
+	},
+	[BLK_IDX_VL_FORWARDING_PARAMS] = {
+		.packing = sja1105_vl_forwarding_params_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_forwarding_params_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_FORWARDING_PARAMS_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_FORWARDING_PARAMS_COUNT,
+	},
 	[BLK_IDX_L2_LOOKUP_PARAMS] = {
 		.packing = sja1105et_l2_lookup_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_params_entry),
@@ -760,6 +1030,7 @@ struct sja1105_table_ops sja1105t_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105_SIZE_L2_FORWARDING_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_L2_FORWARDING_PARAMS_COUNT,
 	},
+	[BLK_IDX_CLK_SYNC_PARAMS] = {0},
 	[BLK_IDX_AVB_PARAMS] = {
 		.packing = sja1105et_avb_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_avb_params_entry),
@@ -772,6 +1043,12 @@ struct sja1105_table_ops sja1105t_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105ET_SIZE_GENERAL_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_GENERAL_PARAMS_COUNT,
 	},
+	[BLK_IDX_RETAGGING] = {
+		.packing = sja1105_retagging_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_retagging_entry),
+		.packed_entry_size = SJA1105_SIZE_RETAGGING_ENTRY,
+		.max_entry_count = SJA1105_MAX_RETAGGING_COUNT,
+	},
 	[BLK_IDX_XMII_PARAMS] = {
 		.packing = sja1105_xmii_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_xmii_params_entry),
@@ -783,6 +1060,11 @@ struct sja1105_table_ops sja1105t_table_ops[BLK_IDX_MAX] = {
 
 /* SJA1105P: Second generation, no TTEthernet, no SGMII */
 struct sja1105_table_ops sja1105p_table_ops[BLK_IDX_MAX] = {
+	[BLK_IDX_SCHEDULE] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS] = {0},
+	[BLK_IDX_VL_LOOKUP] = {0},
+	[BLK_IDX_VL_POLICING] = {0},
+	[BLK_IDX_VL_FORWARDING] = {0},
 	[BLK_IDX_L2_LOOKUP] = {
 		.packing = sja1105pqrs_l2_lookup_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_entry),
@@ -813,6 +1095,9 @@ struct sja1105_table_ops sja1105p_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105PQRS_SIZE_MAC_CONFIG_ENTRY,
 		.max_entry_count = SJA1105_MAX_MAC_CONFIG_COUNT,
 	},
+	[BLK_IDX_SCHEDULE_PARAMS] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS] = {0},
+	[BLK_IDX_VL_FORWARDING_PARAMS] = {0},
 	[BLK_IDX_L2_LOOKUP_PARAMS] = {
 		.packing = sja1105pqrs_l2_lookup_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_params_entry),
@@ -825,6 +1110,7 @@ struct sja1105_table_ops sja1105p_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105_SIZE_L2_FORWARDING_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_L2_FORWARDING_PARAMS_COUNT,
 	},
+	[BLK_IDX_CLK_SYNC_PARAMS] = {0},
 	[BLK_IDX_AVB_PARAMS] = {
 		.packing = sja1105pqrs_avb_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_avb_params_entry),
@@ -836,6 +1122,12 @@ struct sja1105_table_ops sja1105p_table_ops[BLK_IDX_MAX] = {
 		.unpacked_entry_size = sizeof(struct sja1105_general_params_entry),
 		.packed_entry_size = SJA1105PQRS_SIZE_GENERAL_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_GENERAL_PARAMS_COUNT,
+	},
+	[BLK_IDX_RETAGGING] = {
+		.packing = sja1105_retagging_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_retagging_entry),
+		.packed_entry_size = SJA1105_SIZE_RETAGGING_ENTRY,
+		.max_entry_count = SJA1105_MAX_RETAGGING_COUNT,
 	},
 	[BLK_IDX_XMII_PARAMS] = {
 		.packing = sja1105_xmii_params_entry_packing,
@@ -848,6 +1140,36 @@ struct sja1105_table_ops sja1105p_table_ops[BLK_IDX_MAX] = {
 
 /* SJA1105Q: Second generation, TTEthernet, no SGMII */
 struct sja1105_table_ops sja1105q_table_ops[BLK_IDX_MAX] = {
+	[BLK_IDX_SCHEDULE] = {
+		.packing = sja1105_schedule_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_COUNT,
+	},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS] = {
+		.packing = sja1105_schedule_entry_points_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_entry_points_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_ENTRY_POINTS_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_ENTRY_POINTS_COUNT,
+	},
+	[BLK_IDX_VL_LOOKUP] = {
+		.packing = sja1105_vl_lookup_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_lookup_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_LOOKUP_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_LOOKUP_COUNT,
+	},
+	[BLK_IDX_VL_POLICING] = {
+		.packing = sja1105_vl_policing_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_policing_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_POLICING_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_POLICING_COUNT,
+	},
+	[BLK_IDX_VL_FORWARDING] = {
+		.packing = sja1105_vl_forwarding_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_forwarding_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_FORWARDING_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_FORWARDING_COUNT,
+	},
 	[BLK_IDX_L2_LOOKUP] = {
 		.packing = sja1105pqrs_l2_lookup_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_entry),
@@ -878,6 +1200,24 @@ struct sja1105_table_ops sja1105q_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105PQRS_SIZE_MAC_CONFIG_ENTRY,
 		.max_entry_count = SJA1105_MAX_MAC_CONFIG_COUNT,
 	},
+	[BLK_IDX_SCHEDULE_PARAMS] = {
+		.packing = sja1105_schedule_params_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_params_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_PARAMS_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_PARAMS_COUNT,
+	},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS] = {
+		.packing = sja1105_schedule_entry_points_params_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_entry_points_params_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_ENTRY_POINTS_PARAMS_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_ENTRY_POINTS_PARAMS_COUNT,
+	},
+	[BLK_IDX_VL_FORWARDING_PARAMS] = {
+		.packing = sja1105_vl_forwarding_params_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_forwarding_params_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_FORWARDING_PARAMS_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_FORWARDING_PARAMS_COUNT,
+	},
 	[BLK_IDX_L2_LOOKUP_PARAMS] = {
 		.packing = sja1105pqrs_l2_lookup_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_params_entry),
@@ -890,6 +1230,7 @@ struct sja1105_table_ops sja1105q_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105_SIZE_L2_FORWARDING_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_L2_FORWARDING_PARAMS_COUNT,
 	},
+	[BLK_IDX_CLK_SYNC_PARAMS] = {0},
 	[BLK_IDX_AVB_PARAMS] = {
 		.packing = sja1105pqrs_avb_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_avb_params_entry),
@@ -901,6 +1242,12 @@ struct sja1105_table_ops sja1105q_table_ops[BLK_IDX_MAX] = {
 		.unpacked_entry_size = sizeof(struct sja1105_general_params_entry),
 		.packed_entry_size = SJA1105PQRS_SIZE_GENERAL_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_GENERAL_PARAMS_COUNT,
+	},
+	[BLK_IDX_RETAGGING] = {
+		.packing = sja1105_retagging_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_retagging_entry),
+		.packed_entry_size = SJA1105_SIZE_RETAGGING_ENTRY,
+		.max_entry_count = SJA1105_MAX_RETAGGING_COUNT,
 	},
 	[BLK_IDX_XMII_PARAMS] = {
 		.packing = sja1105_xmii_params_entry_packing,
@@ -913,6 +1260,11 @@ struct sja1105_table_ops sja1105q_table_ops[BLK_IDX_MAX] = {
 
 /* SJA1105R: Second generation, no TTEthernet, SGMII */
 struct sja1105_table_ops sja1105r_table_ops[BLK_IDX_MAX] = {
+	[BLK_IDX_SCHEDULE] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS] = {0},
+	[BLK_IDX_VL_LOOKUP] = {0},
+	[BLK_IDX_VL_POLICING] = {0},
+	[BLK_IDX_VL_FORWARDING] = {0},
 	[BLK_IDX_L2_LOOKUP] = {
 		.packing = sja1105pqrs_l2_lookup_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_entry),
@@ -943,6 +1295,9 @@ struct sja1105_table_ops sja1105r_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105PQRS_SIZE_MAC_CONFIG_ENTRY,
 		.max_entry_count = SJA1105_MAX_MAC_CONFIG_COUNT,
 	},
+	[BLK_IDX_SCHEDULE_PARAMS] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS] = {0},
+	[BLK_IDX_VL_FORWARDING_PARAMS] = {0},
 	[BLK_IDX_L2_LOOKUP_PARAMS] = {
 		.packing = sja1105pqrs_l2_lookup_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_params_entry),
@@ -955,6 +1310,7 @@ struct sja1105_table_ops sja1105r_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105_SIZE_L2_FORWARDING_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_L2_FORWARDING_PARAMS_COUNT,
 	},
+	[BLK_IDX_CLK_SYNC_PARAMS] = {0},
 	[BLK_IDX_AVB_PARAMS] = {
 		.packing = sja1105pqrs_avb_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_avb_params_entry),
@@ -966,6 +1322,12 @@ struct sja1105_table_ops sja1105r_table_ops[BLK_IDX_MAX] = {
 		.unpacked_entry_size = sizeof(struct sja1105_general_params_entry),
 		.packed_entry_size = SJA1105PQRS_SIZE_GENERAL_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_GENERAL_PARAMS_COUNT,
+	},
+	[BLK_IDX_RETAGGING] = {
+		.packing = sja1105_retagging_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_retagging_entry),
+		.packed_entry_size = SJA1105_SIZE_RETAGGING_ENTRY,
+		.max_entry_count = SJA1105_MAX_RETAGGING_COUNT,
 	},
 	[BLK_IDX_XMII_PARAMS] = {
 		.packing = sja1105_xmii_params_entry_packing,
@@ -983,6 +1345,36 @@ struct sja1105_table_ops sja1105r_table_ops[BLK_IDX_MAX] = {
 
 /* SJA1105S: Second generation, TTEthernet, SGMII */
 struct sja1105_table_ops sja1105s_table_ops[BLK_IDX_MAX] = {
+	[BLK_IDX_SCHEDULE] = {
+		.packing = sja1105_schedule_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_COUNT,
+	},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS] = {
+		.packing = sja1105_schedule_entry_points_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_entry_points_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_ENTRY_POINTS_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_ENTRY_POINTS_COUNT,
+	},
+	[BLK_IDX_VL_LOOKUP] = {
+		.packing = sja1105_vl_lookup_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_lookup_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_LOOKUP_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_LOOKUP_COUNT,
+	},
+	[BLK_IDX_VL_POLICING] = {
+		.packing = sja1105_vl_policing_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_policing_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_POLICING_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_POLICING_COUNT,
+	},
+	[BLK_IDX_VL_FORWARDING] = {
+		.packing = sja1105_vl_forwarding_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_forwarding_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_FORWARDING_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_FORWARDING_COUNT,
+	},
 	[BLK_IDX_L2_LOOKUP] = {
 		.packing = sja1105pqrs_l2_lookup_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_entry),
@@ -1013,6 +1405,24 @@ struct sja1105_table_ops sja1105s_table_ops[BLK_IDX_MAX] = {
 		.packed_entry_size = SJA1105PQRS_SIZE_MAC_CONFIG_ENTRY,
 		.max_entry_count = SJA1105_MAX_MAC_CONFIG_COUNT,
 	},
+	[BLK_IDX_SCHEDULE_PARAMS] = {
+		.packing = sja1105_schedule_params_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_params_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_PARAMS_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_PARAMS_COUNT,
+	},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS] = {
+		.packing = sja1105_schedule_entry_points_params_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_schedule_entry_points_params_entry),
+		.packed_entry_size = SJA1105_SIZE_SCHEDULE_ENTRY_POINTS_PARAMS_ENTRY,
+		.max_entry_count = SJA1105_MAX_SCHEDULE_ENTRY_POINTS_PARAMS_COUNT,
+	},
+	[BLK_IDX_VL_FORWARDING_PARAMS] = {
+		.packing = sja1105_vl_forwarding_params_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_vl_forwarding_params_entry),
+		.packed_entry_size = SJA1105_SIZE_VL_FORWARDING_PARAMS_ENTRY,
+		.max_entry_count = SJA1105_MAX_VL_FORWARDING_PARAMS_COUNT,
+	},
 	[BLK_IDX_L2_LOOKUP_PARAMS] = {
 		.packing = sja1105pqrs_l2_lookup_params_entry_packing,
 		.unpacked_entry_size = sizeof(struct sja1105_l2_lookup_params_entry),
@@ -1036,6 +1446,12 @@ struct sja1105_table_ops sja1105s_table_ops[BLK_IDX_MAX] = {
 		.unpacked_entry_size = sizeof(struct sja1105_general_params_entry),
 		.packed_entry_size = SJA1105PQRS_SIZE_GENERAL_PARAMS_ENTRY,
 		.max_entry_count = SJA1105_MAX_GENERAL_PARAMS_COUNT,
+	},
+	[BLK_IDX_RETAGGING] = {
+		.packing = sja1105_retagging_entry_packing,
+		.unpacked_entry_size = sizeof(struct sja1105_retagging_entry),
+		.packed_entry_size = SJA1105_SIZE_RETAGGING_ENTRY,
+		.max_entry_count = SJA1105_MAX_RETAGGING_COUNT,
 	},
 	[BLK_IDX_XMII_PARAMS] = {
 		.packing = sja1105_xmii_params_entry_packing,
