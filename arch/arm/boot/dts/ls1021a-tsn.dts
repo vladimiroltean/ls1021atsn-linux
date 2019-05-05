@@ -68,6 +68,13 @@
 	status = "ok";
 
 	/* ADG704BRMZ 1:4 mux/demux */
+	spidev@0 {
+		compatible = "rohm,dh2228fv";
+		reg = <0x0>;
+		spi-max-frequency = <4000000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+	};
 	tsn_switch: sja1105@1 {
 		reg = <0x1>;
 		#address-cells = <1>;
@@ -121,6 +128,20 @@
 				};
 			};
 		};
+	};
+	spidev@2 {
+		compatible = "rohm,dh2228fv";
+		reg = <0x2>;
+		spi-max-frequency = <4000000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+	};
+	spidev@4 {
+		compatible = "rohm,dh2228fv";
+		reg = <0x4>;
+		spi-max-frequency = <4000000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
 	};
 };
 
