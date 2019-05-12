@@ -46,7 +46,6 @@
  * to do the latter, you need to stop and restart the schedule engine.
  */
 #define SJA1105_MAX_ADJ_PPB		32000000
-#define SJA1105_SIZE_PTPEGR_TS		4
 #define SJA1105_SIZE_PTP_CMD		4
 
 struct sja1105_ptp_cmd {
@@ -258,28 +257,63 @@ int sja1105_ptp_tstamp_reconstruct(struct sja1105_private *priv,
 	return 0;
 }
 
-int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, int ts_regid,
+int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port,
 			   ktime_t orig_time, struct timespec64 *ts)
 {
 	const struct sja1105_regs *regs = priv->info->regs;
-	const int ts_reg_index = 2 * port + ts_regid;
-	u8 packed_buf[SJA1105_SIZE_PTPEGR_TS];
+	int tstamp_bit_start, tstamp_bit_end;
+	u8 packed_buf[8];
 	u64 ts_partial;
 	u64 update;
 	int rc;
 
-	rc = sja1105_spi_send_packed_buf(priv, SPI_READ,
-					 regs->ptpegr_ts + ts_reg_index,
-					 packed_buf, SJA1105_SIZE_PTPEGR_TS);
+	rc = sja1105_spi_send_packed_buf(priv, SPI_READ, regs->ptpegr_ts[port],
+					 packed_buf,
+					 priv->info->ptpegr_ts_bytes);
 	if (rc < 0)
 		return rc;
 
-	sja1105_unpack(packed_buf, &update, 0, 0, SJA1105_SIZE_PTPEGR_TS);
+	print_hex_dump_bytes("", DUMP_PREFIX_NONE, packed_buf, priv->info->ptpegr_ts_bytes);
+	/* SJA1105 E/T layout of the 4-byte SPI payload:
+	 *
+	 * 31    23    15    7     0
+	 * |     |     |     |     |
+	 * +-----+-----+-----+     ^
+	 *          ^              |
+	 *          |              |
+	 *  24-bit timestamp   Update bit
+	 *
+	 *
+	 * SJA1105 P/Q/R/S layout of the 8-byte SPI payload:
+	 *
+	 * 31    23    15    7     0     63    55    47    39    32
+	 * |     |     |     |     |     |     |     |     |     |
+	 *                         ^     +-----+-----+-----+-----+
+	 *                         |                 ^
+	 *                         |                 |
+	 *                    Update bit    32-bit timestamp
+	 *
+	 * Notice that the update bit is in the same place.
+	 * To have common code for E/T and P/Q/R/S for reading the timestamp,
+	 * we need to juggle with the offset and the bit indices.
+	 */
+	sja1105_unpack(packed_buf, &update, 0, 0, priv->info->ptpegr_ts_bytes);
 	if (!update)
 		/* No update. Keep trying, you'll make it someday. */
 		return -EAGAIN;
 
-	sja1105_unpack(packed_buf, &ts_partial, 31, 8, SJA1105_SIZE_PTPEGR_TS);
+	/* Point the end bit to the second 32-bit word on P/Q/R/S,
+	 * no-op on E/T.
+	 */
+	tstamp_bit_end = (priv->info->ptpegr_ts_bytes - 4) * 8;
+	/* Shift the 24-bit timestamp on E/T to be collected from 31:8.
+	 * No-op on P/Q/R/S.
+	 */
+	tstamp_bit_end += 32 - priv->info->ptp_ts_bits;
+	tstamp_bit_start = tstamp_bit_end + priv->info->ptp_ts_bits - 1;
+
+	sja1105_unpack(packed_buf, &ts_partial, tstamp_bit_start,
+		       tstamp_bit_end, priv->info->ptpegr_ts_bytes);
 	return sja1105_ptp_tstamp_reconstruct(priv, ts_partial, orig_time, ts);
 }
 

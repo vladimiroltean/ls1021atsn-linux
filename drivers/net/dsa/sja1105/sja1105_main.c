@@ -1562,7 +1562,7 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 	skb_shinfo(clone)->tx_flags |= SKBTX_IN_PROGRESS;
 
 	do {
-		rc = sja1105_ptpegr_ts_poll(priv, slot, 0, orig_time, &ts);
+		rc = sja1105_ptpegr_ts_poll(priv, slot, orig_time, &ts);
 		if (rc < 0 && rc != -EAGAIN) {
 			dev_err(ds->dev, "xmit: failed to poll for tstamp\n");
 			kfree_skb(clone);

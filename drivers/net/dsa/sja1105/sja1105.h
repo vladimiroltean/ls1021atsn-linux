@@ -37,7 +37,7 @@ struct sja1105_regs {
 	u64 ptpclk;
 	u64 ptpclkrate;
 	u64 ptptsclk;
-	u64 ptpegr_ts;
+	u64 ptpegr_ts[SJA1105_NUM_PORTS];
 	u64 pad_mii_tx[SJA1105_NUM_PORTS];
 	u64 cgu_idiv[SJA1105_NUM_PORTS];
 	u64 rgmii_pad_mii_tx[SJA1105_NUM_PORTS];
@@ -66,6 +66,10 @@ struct sja1105_info {
 	 * 64-bit values back.
 	 */
 	int ptp_ts_bits;
+	/* Also SPI commands are of different sizes to retrieve
+	 * the egress timestamps.
+	 */
+	int ptpegr_ts_bytes;
 	const struct sja1105_dynamic_table_ops *dyn_ops;
 	const struct sja1105_table_ops *static_ops;
 	const struct sja1105_regs *regs;

@@ -201,8 +201,13 @@ static struct sk_buff *sja1105_rcv(struct sk_buff *skb,
 		 * Structure of the meta-data follow-up frame.
 		 * It is in network byte order, so there are no quirks
 		 * while unpacking the meta frame.
+		 *
+		 * Also SJA1105 E/T only populates bits 23:0 of the timestamp
+		 * whereas P/Q/R/S does 32 bits. Since the structure is the
+		 * same and the E/T puts zeroes in the high-order byte, use
+		 * a unified unpacking command for both device series.
 		 */
-		packing(meta,     &tstamp,     23, 0, 4, UNPACK, 0);
+		packing(meta,     &tstamp,     31, 0, 4, UNPACK, 0);
 		packing(meta + 6, &source_port, 7, 0, 1, UNPACK, 0);
 		packing(meta + 7, &switch_id,   7, 0, 1, UNPACK, 0);
 		if (is_tagged)

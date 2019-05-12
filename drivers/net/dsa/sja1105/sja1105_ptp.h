@@ -14,7 +14,7 @@ int sja1105_ptp_tstamp_reconstruct(struct sja1105_private *priv,
 				   u32 ts_partial, ktime_t orig_time,
 				   struct timespec64 *ts_full);
 
-int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, int ts_regid,
+int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port,
 			   ktime_t orig_time, struct timespec64 *ts);
 
 int sja1105et_ptp_cmd(const void *ctx, const void *data);
@@ -46,7 +46,7 @@ sja1105_ptp_tstamp_reconstruct(struct sja1105_private *priv,
 }
 
 static inline int
-sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, int ts_regid,
+sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port,
 		       ktime_t orig_time, struct timespec64 *ts)
 {
 	*ts = (struct timespec64) {0};
