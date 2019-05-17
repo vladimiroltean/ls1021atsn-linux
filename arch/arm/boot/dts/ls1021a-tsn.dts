@@ -15,27 +15,20 @@
 		clock-frequency = <24576000>;
 	};
 
-	regulators {
-		compatible = "simple-bus";
-		#address-cells = <1>;
-		#size-cells = <0>;
+	reg_vdda_codec: regulator-3V3 {
+		compatible = "regulator-fixed";
+		regulator-name = "3P3V";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-always-on;
+	};
 
-		reg_3p3v: regulator@0 {
-			compatible = "regulator-fixed";
-			reg = <0>;
-			regulator-name = "3P3V";
-			regulator-min-microvolt = <3300000>;
-			regulator-max-microvolt = <3300000>;
-			regulator-always-on;
-		};
-		reg_2p5v: regulator@1 {
-			compatible = "regulator-fixed";
-			reg = <1>;
-			regulator-name = "2P5V";
-			regulator-min-microvolt = <2500000>;
-			regulator-max-microvolt = <2500000>;
-			regulator-always-on;
-		};
+	reg_vddio_codec: regulator-2V5 {
+		compatible = "regulator-fixed";
+		regulator-name = "2P5V";
+		regulator-min-microvolt = <2500000>;
+		regulator-max-microvolt = <2500000>;
+		regulator-always-on;
 	};
 };
 
@@ -43,20 +36,21 @@
 	tbi-handle = <&tbi0>;
 	phy-handle = <&sgmii_phy2>;
 	phy-mode = "sgmii";
-	status = "ok";
+	status = "okay";
 };
 
 &enet1 {
 	tbi-handle = <&tbi1>;
 	phy-handle = <&sgmii_phy1>;
 	phy-mode = "sgmii";
-	status = "ok";
+	status = "okay";
 };
 
 /* RGMII delays added via PCB traces */
 &enet2 {
 	phy-mode = "rgmii";
-	status = "ok";
+	status = "okay";
+
 	fixed-link {
 		speed = <1000>;
 		full-duplex;
@@ -65,7 +59,7 @@
 
 &dspi0 {
 	bus-num = <0>;
-	status = "ok";
+	status = "okay";
 
 	/* ADG704BRMZ 1:4 mux/demux */
 	spidev@0 {
@@ -75,7 +69,8 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 	};
-	tsn_switch: sja1105@1 {
+
+	sja1105: ethernet-switch@1 {
 		reg = <0x1>;
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -86,9 +81,11 @@
 		spi-cpha;
 		fsl,spi-cs-sck-delay = <1000>;
 		fsl,spi-sck-cs-delay = <1000>;
+
 		ports {
 			#address-cells = <1>;
 			#size-cells = <0>;
+
 			port@0 {
 				/* ETH5 written on chassis */
 				label = "swp5";
@@ -96,6 +93,7 @@
 				phy-mode = "rgmii-id";
 				reg = <0>;
 			};
+
 			port@1 {
 				/* ETH2 written on chassis */
 				label = "swp2";
@@ -103,6 +101,7 @@
 				phy-mode = "rgmii-id";
 				reg = <1>;
 			};
+
 			port@2 {
 				/* ETH3 written on chassis */
 				label = "swp3";
@@ -110,18 +109,21 @@
 				phy-mode = "rgmii-id";
 				reg = <2>;
 			};
+
 			port@3 {
 				/* ETH4 written on chassis */
-				phy-handle = <&rgmii_phy5>;
 				label = "swp4";
+				phy-handle = <&rgmii_phy5>;
 				phy-mode = "rgmii-id";
 				reg = <3>;
 			};
+
 			port@4 {
 				/* Internal port connected to eth2 */
 				ethernet = <&enet2>;
 				phy-mode = "rgmii";
 				reg = <4>;
+
 				fixed-link {
 					speed = <1000>;
 					full-duplex;
@@ -129,6 +131,7 @@
 			};
 		};
 	};
+
 	spidev@2 {
 		compatible = "rohm,dh2228fv";
 		reg = <0x2>;
@@ -136,6 +139,7 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 	};
+
 	spidev@4 {
 		compatible = "rohm,dh2228fv";
 		reg = <0x4>;
@@ -150,23 +154,29 @@
 	sgmii_phy1: ethernet-phy@1 {
 		reg = <0x1>;
 	};
+
 	/* AR8031 */
 	sgmii_phy2: ethernet-phy@2 {
 		reg = <0x2>;
 	};
-	/* BCM5464 */
+
+	/* BCM5464 quad PHY */
 	rgmii_phy3: ethernet-phy@3 {
 		reg = <0x3>;
 	};
+
 	rgmii_phy4: ethernet-phy@4 {
 		reg = <0x4>;
 	};
+
 	rgmii_phy5: ethernet-phy@5 {
 		reg = <0x5>;
 	};
+
 	rgmii_phy6: ethernet-phy@6 {
 		reg = <0x6>;
 	};
+
 	/* SGMII PCS for enet0 */
 	tbi0: tbi-phy@1f {
 		reg = <0x1f>;
@@ -183,7 +193,7 @@
 };
 
 &i2c0 {
-	status = "ok";
+	status = "okay";
 
 	/* 3 axis accelerometer */
 	accelerometer@1e {
@@ -191,42 +201,48 @@
 		reg = <0x1e>;
 		position = <0>;
 	};
+
 	/* Gyroscope is at 0x20 but not supported */
 	/* Audio codec (SAI2) */
 	codec@2a {
-		#sound-dai-cells = <0>;
 		compatible = "fsl,sgtl5000";
 		reg = <0x2a>;
-		VDDA-supply = <&reg_3p3v>;
-		VDDIO-supply = <&reg_2p5v>;
+		#sound-dai-cells = <0>;
+		VDDA-supply = <&reg_vdda_codec>;
+		VDDIO-supply = <&reg_vddio_codec>;
 		clocks = <&sys_mclk>;
 	};
+
 	/* Current sensing circuit for 1V VDDCORE PMIC rail */
 	current-sensor@44 {
 		compatible = "ti,ina220";
 		reg = <0x44>;
 		shunt-resistor = <1000>;
 	};
+
 	/* Current sensing circuit for 12V VCC rail */
 	current-sensor@45 {
 		compatible = "ti,ina220";
 		reg = <0x45>;
 		shunt-resistor = <1000>;
 	};
+
 	/* Thermal monitor - case */
 	temperature-sensor@48 {
 		compatible = "national,lm75";
 		reg = <0x48>;
 	};
+
 	/* Thermal monitor - chip */
 	temperature-sensor@4c {
 		compatible = "ti,tmp451";
 		reg = <0x4c>;
 	};
-	/* 4-channel ADC */
-	adc@49 {
-		compatible = "ad7924";
-		reg = <0x49>;
+
+	/* TI ADS7924 4-channel ADC at 0x49 */
+	eeprom@51 {
+		compatible = "atmel,24c32";
+		reg = <0x51>;
 	};
 };
 
@@ -247,6 +263,7 @@
 			label = "RCW";
 			reg = <0x0 0x10000>;
 		};
+
 		partitions@10000 {
 			label = "U-Boot";
 			reg = <0x10000 0x2F0000>;
@@ -264,25 +281,25 @@
 };
 
 &esdhc {
-	status = "ok";
+	status = "okay";
 };
 
 &uart0 {
-	status = "ok";
+	status = "okay";
 };
 
 &lpuart0 {
-	status = "ok";
+	status = "okay";
 };
 
 &lpuart3 {
-	status = "ok";
+	status = "okay";
 };
 
 &sai2 {
-	status = "ok";
+	status = "okay";
 };
 
 &sata {
-	status = "ok";
+	status = "okay";
 };
