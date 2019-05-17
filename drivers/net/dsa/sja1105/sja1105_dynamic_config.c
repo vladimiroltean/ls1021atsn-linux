@@ -89,11 +89,13 @@ sja1105pqrs_l2_lookup_cmd_packing(void *buf, struct sja1105_dyn_cmd *cmd,
 {
 	u8 *p = buf + SJA1105PQRS_SIZE_L2_LOOKUP_ENTRY;
 	const int size = SJA1105_SIZE_DYN_CMD;
+	u64 lockeds = 0;
 	u64 hostcmd;
 
 	sja1105_packing(p, &cmd->valid,    31, 31, size, op);
 	sja1105_packing(p, &cmd->rdwrset,  30, 30, size, op);
 	sja1105_packing(p, &cmd->errors,   29, 29, size, op);
+	sja1105_packing(p, &lockeds,       28, 28, size, op);
 	sja1105_packing(p, &cmd->valident, 27, 27, size, op);
 
 	/* VALIDENT is supposed to indicate "keep or not", but in SJA1105 E/T,
@@ -575,12 +577,14 @@ int sja1105_dynamic_config_read(struct sja1105_private *priv,
 	int retries = 3;
 	int rc;
 
-	if (blk_idx >= BLK_IDX_MAX_DYN)
+	if (blk_idx >= BLK_IDX_MAX_DYN) {
+		dev_err(priv->ds->dev, "%s: %d\n", __func__, __LINE__);
 		return -ERANGE;
+	}
 
 	ops = &priv->info->dyn_ops[blk_idx];
 
-	if (index >= ops->max_entry_count)
+	if (index >= 0 && index >= ops->max_entry_count)
 		return -ERANGE;
 	if (index < 0 && !(ops->access & OP_SEARCH))
 		return -EOPNOTSUPP;
@@ -603,6 +607,7 @@ int sja1105_dynamic_config_read(struct sja1105_private *priv,
 		cmd.index = index;
 		cmd.search = false;
 	}
+	cmd.valident = true;
 	ops->cmd_packing(packed_buf, &cmd, PACK);
 
 	/* Send SPI write operation: read config table entry */
@@ -630,7 +635,7 @@ int sja1105_dynamic_config_read(struct sja1105_private *priv,
 		 * So don't error out in that case.
 		 */
 		if (!cmd.valident && blk_idx != BLK_IDX_MGMT_ROUTE)
-			return -EINVAL;
+			return -ENOENT;
 		cpu_relax();
 	} while (cmd.valid && --retries);
 

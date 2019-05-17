@@ -177,6 +177,11 @@ int sja1105_dynamic_config_write(struct sja1105_private *priv,
 				 enum sja1105_blk_idx blk_idx,
 				 int index, void *entry, bool keep);
 
+enum sja1105_iotag {
+	SJA1105_C_TAG = 0, /* Inner */
+	SJA1105_S_TAG = 1, /* Outer */
+};
+
 u8 sja1105et_fdb_hash(struct sja1105_private *priv, const u8 *addr, u16 vid);
 int sja1105et_fdb_add(struct dsa_switch *ds, int port,
 		      const unsigned char *addr, u16 vid);
