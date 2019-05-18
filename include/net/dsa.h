@@ -474,6 +474,7 @@ struct dsa_switch_ops {
 	int	(*port_egress_floods)(struct dsa_switch *ds, int port,
 				      bool unicast, bool multicast,
 				      bool broadcast);
+	int	(*port_learning)(struct dsa_switch *ds, int port, bool on);
 
 	/*
 	 * VLAN support
