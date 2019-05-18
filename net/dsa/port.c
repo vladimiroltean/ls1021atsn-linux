@@ -103,7 +103,7 @@ int dsa_port_bridge_join(struct dsa_port *dp, struct net_device *br)
 	int err;
 
 	/* Set the flooding mode before joining the port in the switch */
-	err = dsa_port_bridge_flags(dp, BR_FLOOD_MASK, NULL);
+	err = dsa_port_bridge_flags(dp, BR_LEARNING | BR_FLOOD_MASK, NULL);
 	if (err)
 		return err;
 
@@ -236,14 +236,21 @@ int dsa_port_pre_bridge_flags(const struct dsa_port *dp, unsigned long flags,
 			      struct switchdev_trans *trans)
 {
 	struct dsa_switch *ds = dp->ds;
+	int err = -EINVAL;
+
+	if ((dp->br_port_flags & BR_LEARNING) != (flags & BR_LEARNING)) {
+		if (!ds->ops->port_learning)
+			return -EOPNOTSUPP;
+		err = 0;
+	}
 
 	if ((dp->br_port_flags & BR_FLOOD_MASK) != (flags & BR_FLOOD_MASK)) {
 		if (!ds->ops->port_egress_floods)
 			return -EOPNOTSUPP;
-		return 0;
+		err = 0;
 	}
 
-	return -EINVAL;
+	return err;
 }
 
 int dsa_port_bridge_flags(struct dsa_port *dp, unsigned long flags,
@@ -255,6 +262,14 @@ int dsa_port_bridge_flags(struct dsa_port *dp, unsigned long flags,
 
 	if (switchdev_trans_ph_prepare(trans))
 		return 0;
+
+	if ((dp->br_port_flags & BR_LEARNING) != (flags & BR_LEARNING)) {
+		err = ds->ops->port_learning(ds, port, flags & BR_LEARNING);
+		if (err)
+			return err;
+		dp->br_port_flags &= ~BR_LEARNING;
+		dp->br_port_flags |= (flags & BR_LEARNING);
+	}
 
 	if ((dp->br_port_flags & BR_FLOOD_MASK) != (flags & BR_FLOOD_MASK)) {
 		err = ds->ops->port_egress_floods(ds, port, flags & BR_FLOOD,
