@@ -241,28 +241,35 @@ int dsa_port_pre_bridge_flags(const struct dsa_port *dp, unsigned long flags,
 {
 	struct dsa_switch *ds = dp->ds;
 
-	if (!ds->ops->port_egress_floods ||
-	    (flags & ~(BR_FLOOD | BR_MCAST_FLOOD)))
-		return -EINVAL;
+	if ((dp->br_port_flags & BR_FLOOD_MASK) != (flags & BR_FLOOD_MASK)) {
+		if (!ds->ops->port_egress_floods)
+			return -EOPNOTSUPP;
+		return 0;
+	}
 
-	return 0;
+	return -EINVAL;
 }
 
-int dsa_port_bridge_flags(const struct dsa_port *dp, unsigned long flags,
+int dsa_port_bridge_flags(struct dsa_port *dp, unsigned long flags,
 			  struct switchdev_trans *trans)
 {
 	struct dsa_switch *ds = dp->ds;
 	int port = dp->index;
-	int err = 0;
+	int err;
 
 	if (switchdev_trans_ph_prepare(trans))
 		return 0;
 
-	if (ds->ops->port_egress_floods)
+	if ((dp->br_port_flags & BR_FLOOD_MASK) != (flags & BR_FLOOD_MASK)) {
 		err = ds->ops->port_egress_floods(ds, port, flags & BR_FLOOD,
 						  flags & BR_MCAST_FLOOD);
+		if (err)
+			return err;
+		dp->br_port_flags &= ~BR_FLOOD_MASK;
+		dp->br_port_flags |= (flags & BR_FLOOD_MASK);
+	}
 
-	return err;
+	return 0;
 }
 
 int dsa_port_fdb_add(struct dsa_port *dp, const unsigned char *addr,

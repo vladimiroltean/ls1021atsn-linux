@@ -12,9 +12,12 @@
 #define __DSA_PRIV_H
 
 #include <linux/phy.h>
+#include <linux/if_bridge.h>
 #include <linux/netdevice.h>
 #include <linux/netpoll.h>
 #include <net/dsa.h>
+
+#define BR_FLOOD_MASK (BR_FLOOD | BR_MCAST_FLOOD)
 
 enum {
 	DSA_NOTIFIER_AGEING_TIME,
@@ -152,7 +155,7 @@ int dsa_port_mdb_del(const struct dsa_port *dp,
 		     const struct switchdev_obj_port_mdb *mdb);
 int dsa_port_pre_bridge_flags(const struct dsa_port *dp, unsigned long flags,
 			      struct switchdev_trans *trans);
-int dsa_port_bridge_flags(const struct dsa_port *dp, unsigned long flags,
+int dsa_port_bridge_flags(struct dsa_port *dp, unsigned long flags,
 			  struct switchdev_trans *trans);
 int dsa_port_vlan_add(struct dsa_port *dp,
 		      const struct switchdev_obj_port_vlan *vlan,
