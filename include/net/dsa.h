@@ -215,6 +215,9 @@ struct dsa_port {
 	 * Original copy of the master netdev net_device_ops
 	 */
 	const struct net_device_ops *orig_ndo_ops;
+
+	/* Listener for phylink events on ports with no netdev */
+	struct notifier_block	nb;
 };
 
 struct dsa_switch {

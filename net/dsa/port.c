@@ -13,6 +13,7 @@
 #include <linux/if_bridge.h>
 #include <linux/notifier.h>
 #include <linux/of_mdio.h>
+#include <linux/phylink.h>
 #include <linux/of_net.h>
 
 #include "dsa_priv.h"
@@ -534,104 +535,81 @@ void dsa_port_phylink_fixed_state(struct dsa_port *dp,
 {
 	struct dsa_switch *ds = dp->ds;
 
-	/* No need to check that this operation is valid, the callback would
-	 * not be called if it was not.
+	/* We need to check that the callback exists because phylink raw will
+	 * send PHYLINK_GET_FIXED_STATE events without an explicit register.
 	 */
-	ds->ops->phylink_fixed_state(ds, dp->index, state);
+	if (ds->ops->phylink_fixed_state)
+		ds->ops->phylink_fixed_state(ds, dp->index, state);
 }
 EXPORT_SYMBOL(dsa_port_phylink_fixed_state);
 
-static int dsa_port_setup_phy_of(struct dsa_port *dp, bool enable)
+static int dsa_cpu_port_event(struct notifier_block *nb,
+			      unsigned long event, void *ptr)
 {
+	struct phylink_notifier_info *info = ptr;
+	struct dsa_port *dp = container_of(nb, struct dsa_port, nb);
 	struct dsa_switch *ds = dp->ds;
-	struct phy_device *phydev;
-	int port = dp->index;
-	int err = 0;
 
-	phydev = dsa_port_get_phy_device(dp);
-	if (!phydev)
-		return 0;
-
-	if (IS_ERR(phydev))
-		return PTR_ERR(phydev);
-
-	if (enable) {
-		err = genphy_config_init(phydev);
-		if (err < 0)
-			goto err_put_dev;
-
-		err = genphy_resume(phydev);
-		if (err < 0)
-			goto err_put_dev;
-
-		err = genphy_read_status(phydev);
-		if (err < 0)
-			goto err_put_dev;
-	} else {
-		err = genphy_suspend(phydev);
-		if (err < 0)
-			goto err_put_dev;
+	switch (event) {
+	case PHYLINK_VALIDATE:
+		dsa_port_phylink_validate(dp, info->supported, info->state);
+		break;
+	case PHYLINK_MAC_AN_RESTART:
+		dsa_port_phylink_mac_an_restart(dp);
+		break;
+	case PHYLINK_MAC_CONFIG:
+		dsa_port_phylink_mac_config(dp, info->link_an_mode,
+					    info->state);
+		break;
+	case PHYLINK_MAC_LINK_DOWN:
+		dsa_port_phylink_mac_link_down(dp, info->link_an_mode,
+					       info->interface, info->phydev);
+		break;
+	case PHYLINK_MAC_LINK_UP:
+		dsa_port_phylink_mac_link_up(dp, info->link_an_mode,
+					     info->interface, info->phydev);
+		break;
+	case PHYLINK_GET_FIXED_STATE:
+		dsa_port_phylink_fixed_state(dp, info->state);
+		break;
 	}
-
-	if (ds->ops->adjust_link)
-		ds->ops->adjust_link(ds, port, phydev);
-
-	dev_dbg(ds->dev, "enabled port's phy: %s", phydev_name(phydev));
-
-err_put_dev:
-	put_device(&phydev->mdio.dev);
-	return err;
-}
-
-static int dsa_port_fixed_link_register_of(struct dsa_port *dp)
-{
-	struct device_node *dn = dp->dn;
-	struct dsa_switch *ds = dp->ds;
-	struct phy_device *phydev;
-	int port = dp->index;
-	int mode;
-	int err;
-
-	err = of_phy_register_fixed_link(dn);
-	if (err) {
-		dev_err(ds->dev,
-			"failed to register the fixed PHY of port %d\n",
-			port);
-		return err;
-	}
-
-	phydev = of_phy_find_device(dn);
-
-	mode = of_get_phy_mode(dn);
-	if (mode < 0)
-		mode = PHY_INTERFACE_MODE_NA;
-	phydev->interface = mode;
-
-	genphy_config_init(phydev);
-	genphy_read_status(phydev);
-
-	if (ds->ops->adjust_link)
-		ds->ops->adjust_link(ds, port, phydev);
-
-	put_device(&phydev->mdio.dev);
 
 	return 0;
 }
 
 int dsa_port_link_register_of(struct dsa_port *dp)
 {
-	if (of_phy_is_fixed_link(dp->dn))
-		return dsa_port_fixed_link_register_of(dp);
-	else
-		return dsa_port_setup_phy_of(dp, true);
+	struct device_node *port_dn = dp->dn;
+	int mode, err;
+
+	mode = of_get_phy_mode(port_dn);
+	if (mode < 0)
+		mode = PHY_INTERFACE_MODE_NA;
+
+	dp->nb.notifier_call = dsa_cpu_port_event;
+	dp->pl = phylink_create_raw(&dp->nb, of_fwnode_handle(port_dn), mode);
+	if (IS_ERR(dp->pl)) {
+		pr_err("error creating PHYLINK: %ld\n", PTR_ERR(dp->pl));
+		return PTR_ERR(dp->pl);
+	}
+
+	err = phylink_of_phy_connect(dp->pl, port_dn, 0);
+	if (err)
+		pr_err("could not attach to PHY: %d\n", err);
+
+	rtnl_lock();
+	phylink_start(dp->pl);
+	rtnl_unlock();
+
+	return 0;
 }
 
 void dsa_port_link_unregister_of(struct dsa_port *dp)
 {
-	if (of_phy_is_fixed_link(dp->dn))
-		of_phy_deregister_fixed_link(dp->dn);
-	else
-		dsa_port_setup_phy_of(dp, false);
+	rtnl_lock();
+	phylink_disconnect_phy(dp->pl);
+	rtnl_unlock();
+	phylink_destroy(dp->pl);
 }
 
 int dsa_port_get_phy_strings(struct dsa_port *dp, uint8_t *data)
