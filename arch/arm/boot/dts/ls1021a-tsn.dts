@@ -96,6 +96,7 @@
 
 			port@1 {
 				/* ETH2 written on chassis */
+				ethernet = <&enet1>;
 				label = "swp2";
 				phy-handle = <&rgmii_phy3>;
 				phy-mode = "rgmii-id";
@@ -120,7 +121,7 @@
 
 			port@4 {
 				/* Internal port connected to eth2 */
-				ethernet = <&enet2>;
+				label = "swpi";
 				phy-mode = "rgmii";
 				reg = <4>;
 
