@@ -38,15 +38,10 @@ static void
 sja1105_port_allow_traffic(struct sja1105_l2_forwarding_entry *l2_fwd,
 			   int from, int to, bool allow)
 {
-	if (allow) {
-		l2_fwd[from].bc_domain  |= BIT(to);
+	if (allow)
 		l2_fwd[from].reach_port |= BIT(to);
-		l2_fwd[from].fl_domain  |= BIT(to);
-	} else {
-		l2_fwd[from].bc_domain  &= ~BIT(to);
+	else
 		l2_fwd[from].reach_port &= ~BIT(to);
-		l2_fwd[from].fl_domain  &= ~BIT(to);
-	}
 }
 
 /* Structure used to temporarily transport device tree
@@ -1193,6 +1188,7 @@ static int sja1105_bridge_member(struct dsa_switch *ds, int port,
 static void sja1105_bridge_stp_state_set(struct dsa_switch *ds, int port,
 					 u8 state)
 {
+	const struct dsa_port *dp = &ds->ports[port];
 	struct sja1105_private *priv = ds->priv;
 	struct sja1105_mac_config_entry *mac;
 
@@ -1218,12 +1214,12 @@ static void sja1105_bridge_stp_state_set(struct dsa_switch *ds, int port,
 	case BR_STATE_LEARNING:
 		mac[port].ingress   = true;
 		mac[port].egress    = false;
-		mac[port].dyn_learn = true;
+		mac[port].dyn_learn = dp->br_port_flags & BR_LEARNING;
 		break;
 	case BR_STATE_FORWARDING:
 		mac[port].ingress   = true;
 		mac[port].egress    = true;
-		mac[port].dyn_learn = true;
+		mac[port].dyn_learn = dp->br_port_flags & BR_LEARNING;
 		break;
 	default:
 		dev_err(ds->dev, "invalid STP state: %d\n", state);
@@ -1249,6 +1245,8 @@ static void sja1105_bridge_leave(struct dsa_switch *ds, int port,
 static u8 sja1105_stp_state_get(struct sja1105_private *priv, int port)
 {
 	struct sja1105_mac_config_entry *mac;
+	struct dsa_switch *ds = priv->ds;
+	const struct dsa_port *dp = &ds->ports[port];
 
 	mac = priv->static_config.tables[BLK_IDX_MAC_CONFIG].entries;
 
@@ -1256,9 +1254,11 @@ static u8 sja1105_stp_state_get(struct sja1105_private *priv, int port)
 		return BR_STATE_BLOCKING;
 	if (mac[port].ingress && !mac[port].egress && !mac[port].dyn_learn)
 		return BR_STATE_LISTENING;
-	if (mac[port].ingress && !mac[port].egress && mac[port].dyn_learn)
+	if (mac[port].ingress && !mac[port].egress &&
+	    mac[port].dyn_learn == (dp->br_port_flags & BR_LEARNING))
 		return BR_STATE_LEARNING;
-	if (mac[port].ingress && mac[port].egress && mac[port].dyn_learn)
+	if (mac[port].ingress && mac[port].egress &&
+	    mac[port].dyn_learn == (dp->br_port_flags & BR_LEARNING))
 		return BR_STATE_FORWARDING;
 	/* This is really an error condition if the MAC was in none of the STP
 	 * states above. But treating the port as disabled does nothing, which
@@ -1924,6 +1924,48 @@ static void sja1105_port_disable(struct dsa_switch *ds, int port)
 	skb_queue_purge(&sp->skb_rxtstamp_queue);
 }
 
+static int sja1105_setup_egress_floods(struct dsa_switch *ds, int port,
+				       bool unicast, bool multicast,
+				       bool broadcast)
+{
+	struct sja1105_l2_forwarding_entry *l2_fwd;
+	struct sja1105_private *priv = ds->priv;
+	int from, rc;
+
+	l2_fwd = priv->static_config.tables[BLK_IDX_L2_FORWARDING].entries;
+
+	for (from = 0; from < SJA1105_NUM_PORTS; from++) {
+		if (unicast)
+			l2_fwd[from].fl_domain |= BIT(port);
+		else
+			l2_fwd[from].fl_domain &= ~BIT(port);
+
+		if (broadcast)
+			l2_fwd[from].bc_domain |= BIT(port);
+		else
+			l2_fwd[from].bc_domain &= ~BIT(port);
+
+		rc = sja1105_dynamic_config_write(priv, BLK_IDX_L2_FORWARDING,
+						  from, &l2_fwd[from], true);
+		if (rc < 0)
+			return rc;
+	}
+	return 0;
+}
+
+static int sja1105_setup_learning(struct dsa_switch *ds, int port, bool on)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_mac_config_entry *mac;
+
+	mac = priv->static_config.tables[BLK_IDX_MAC_CONFIG].entries;
+
+	mac[port].dyn_learn = on;
+
+	return sja1105_dynamic_config_write(priv, BLK_IDX_MAC_CONFIG, port,
+					    &mac[port], true);
+}
+
 static const struct dsa_switch_ops sja1105_switch_ops = {
 	.get_tag_protocol	= sja1105_get_tag_protocol,
 	.setup			= sja1105_setup,
@@ -1948,6 +1990,8 @@ static const struct dsa_switch_ops sja1105_switch_ops = {
 	.port_mdb_prepare	= sja1105_mdb_prepare,
 	.port_mdb_add		= sja1105_mdb_add,
 	.port_mdb_del		= sja1105_mdb_del,
+	.port_learning		= sja1105_setup_learning,
+	.port_egress_floods	= sja1105_setup_egress_floods,
 	.port_deferred_xmit	= sja1105_port_deferred_xmit,
 	.port_hwtstamp_get	= sja1105_hwtstamp_get,
 	.port_hwtstamp_set	= sja1105_hwtstamp_set,
