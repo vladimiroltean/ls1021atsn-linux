@@ -38,15 +38,10 @@ static void
 sja1105_port_allow_traffic(struct sja1105_l2_forwarding_entry *l2_fwd,
 			   int from, int to, bool allow)
 {
-	if (allow) {
-		l2_fwd[from].bc_domain  |= BIT(to);
+	if (allow)
 		l2_fwd[from].reach_port |= BIT(to);
-		l2_fwd[from].fl_domain  |= BIT(to);
-	} else {
-		l2_fwd[from].bc_domain  &= ~BIT(to);
+	else
 		l2_fwd[from].reach_port &= ~BIT(to);
-		l2_fwd[from].fl_domain  &= ~BIT(to);
-	}
 }
 
 /* Structure used to temporarily transport device tree
@@ -336,6 +331,8 @@ static int sja1105_init_l2_forwarding(struct sja1105_private *priv)
 
 		sja1105_port_allow_traffic(l2fwd, i, upstream, true);
 		sja1105_port_allow_traffic(l2fwd, upstream, i, true);
+		l2fwd[i].fl_domain |= BIT(upstream);
+		l2fwd[i].bc_domain |= BIT(upstream);
 	}
 	/* Next 8 entries define VLAN PCP mapping from ingress to egress.
 	 * Create a one-to-one mapping.
@@ -1317,6 +1314,7 @@ static int sja1105_bridge_member(struct dsa_switch *ds, int port,
 static void sja1105_bridge_stp_state_set(struct dsa_switch *ds, int port,
 					 u8 state)
 {
+	const struct dsa_port *dp = &ds->ports[port];
 	struct sja1105_private *priv = ds->priv;
 	struct sja1105_mac_config_entry *mac;
 
@@ -1342,12 +1340,12 @@ static void sja1105_bridge_stp_state_set(struct dsa_switch *ds, int port,
 	case BR_STATE_LEARNING:
 		mac[port].ingress   = true;
 		mac[port].egress    = false;
-		mac[port].dyn_learn = true;
+		mac[port].dyn_learn = !!(dp->br_port_flags & BR_LEARNING);
 		break;
 	case BR_STATE_FORWARDING:
 		mac[port].ingress   = true;
 		mac[port].egress    = true;
-		mac[port].dyn_learn = true;
+		mac[port].dyn_learn = !!(dp->br_port_flags & BR_LEARNING);
 		break;
 	default:
 		dev_err(ds->dev, "invalid STP state: %d\n", state);
@@ -2042,6 +2040,56 @@ static bool sja1105_port_txtstamp(struct dsa_switch *ds, int port,
 	return true;
 }
 
+static int sja1105_setup_egress_floods(struct dsa_switch *ds, int port,
+				       bool unicast, bool multicast,
+				       bool broadcast)
+{
+	struct net_device *br = dsa_to_port(ds, port)->bridge_dev;
+	struct sja1105_l2_forwarding_entry *l2_fwd;
+	struct sja1105_private *priv = ds->priv;
+	int from, rc;
+
+	l2_fwd = priv->static_config.tables[BLK_IDX_L2_FORWARDING].entries;
+
+	for (from = 0; from < SJA1105_NUM_PORTS; from++) {
+		if (from == port)
+			continue;
+		if (dsa_to_port(ds, from)->bridge_dev != br)
+			continue;
+
+		if (unicast)
+			l2_fwd[from].fl_domain |= BIT(port);
+		else
+			l2_fwd[from].fl_domain &= ~BIT(port);
+
+		if (broadcast)
+			l2_fwd[from].bc_domain |= BIT(port);
+		else
+			l2_fwd[from].bc_domain &= ~BIT(port);
+
+		dev_err(ds->dev, "%s: port %d ucast %d mcast %d bcast %d fl_domain %llx bc_domain %llx\n",
+			__func__, from, unicast, multicast, broadcast, l2_fwd[from].fl_domain, l2_fwd[from].bc_domain);
+		rc = sja1105_dynamic_config_write(priv, BLK_IDX_L2_FORWARDING,
+						  from, &l2_fwd[from], true);
+		if (rc < 0)
+			return rc;
+	}
+	return 0;
+}
+
+static int sja1105_setup_learning(struct dsa_switch *ds, int port, bool on)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_mac_config_entry *mac;
+
+	mac = priv->static_config.tables[BLK_IDX_MAC_CONFIG].entries;
+
+	mac[port].dyn_learn = on;
+
+	return sja1105_dynamic_config_write(priv, BLK_IDX_MAC_CONFIG, port,
+					    &mac[port], true);
+}
+
 static const struct dsa_switch_ops sja1105_switch_ops = {
 	.get_tag_protocol	= sja1105_get_tag_protocol,
 	.setup			= sja1105_setup,
@@ -2068,6 +2116,8 @@ static const struct dsa_switch_ops sja1105_switch_ops = {
 	.port_mdb_prepare	= sja1105_mdb_prepare,
 	.port_mdb_add		= sja1105_mdb_add,
 	.port_mdb_del		= sja1105_mdb_del,
+	.port_learning		= sja1105_setup_learning,
+	.port_egress_floods	= sja1105_setup_egress_floods,
 	.port_deferred_xmit	= sja1105_port_deferred_xmit,
 	.port_hwtstamp_get	= sja1105_hwtstamp_get,
 	.port_hwtstamp_set	= sja1105_hwtstamp_set,
