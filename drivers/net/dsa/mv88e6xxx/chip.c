@@ -4549,7 +4549,8 @@ static int mv88e6xxx_port_mdb_del(struct dsa_switch *ds, int port,
 }
 
 static int mv88e6xxx_port_egress_floods(struct dsa_switch *ds, int port,
-					 bool unicast, bool multicast)
+					bool unicast, bool multicast,
+					bool broadcast)
 {
 	struct mv88e6xxx_chip *chip = ds->priv;
 	int err = -EOPNOTSUPP;

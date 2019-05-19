@@ -17,7 +17,7 @@
 #include <linux/netpoll.h>
 #include <net/dsa.h>
 
-#define BR_FLOOD_MASK (BR_FLOOD | BR_MCAST_FLOOD)
+#define BR_FLOOD_MASK (BR_FLOOD | BR_MCAST_FLOOD | BR_BCAST_FLOOD)
 
 enum {
 	DSA_NOTIFIER_AGEING_TIME,

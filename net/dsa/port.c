@@ -262,7 +262,8 @@ int dsa_port_bridge_flags(struct dsa_port *dp, unsigned long flags,
 
 	if ((dp->br_port_flags & BR_FLOOD_MASK) != (flags & BR_FLOOD_MASK)) {
 		err = ds->ops->port_egress_floods(ds, port, flags & BR_FLOOD,
-						  flags & BR_MCAST_FLOOD);
+						  flags & BR_MCAST_FLOOD,
+						  flags & BR_BCAST_FLOOD);
 		if (err)
 			return err;
 		dp->br_port_flags &= ~BR_FLOOD_MASK;

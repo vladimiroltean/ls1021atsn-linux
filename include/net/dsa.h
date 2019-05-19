@@ -472,7 +472,8 @@ struct dsa_switch_ops {
 				      u8 state);
 	void	(*port_fast_age)(struct dsa_switch *ds, int port);
 	int	(*port_egress_floods)(struct dsa_switch *ds, int port,
-				      bool unicast, bool multicast);
+				      bool unicast, bool multicast,
+				      bool broadcast);
 
 	/*
 	 * VLAN support
