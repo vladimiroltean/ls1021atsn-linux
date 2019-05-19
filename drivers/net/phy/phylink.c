@@ -18,6 +18,7 @@
 #include <linux/spinlock.h>
 #include <linux/timer.h>
 #include <linux/workqueue.h>
+#include <linux/notifier.h>
 
 #include "sfp.h"
 #include "swphy.h"
@@ -41,6 +42,8 @@ struct phylink {
 	/* private: */
 	struct net_device *netdev;
 	const struct phylink_mac_ops *ops;
+	struct notifier_block *nb;
+	struct blocking_notifier_head notifier_chain;
 
 	unsigned long phylink_disable_state; /* bitmask of disables */
 	struct phy_device *phydev;
@@ -111,7 +114,16 @@ static const char *phylink_an_mode_str(unsigned int mode)
 static int phylink_validate(struct phylink *pl, unsigned long *supported,
 			    struct phylink_link_state *state)
 {
-	pl->ops->validate(pl->netdev, supported, state);
+	struct phylink_notifier_info info = {
+		.supported = supported,
+		.state = state
+	};
+
+	if (pl->ops)
+		pl->ops->validate(pl->netdev, supported, state);
+	else
+		blocking_notifier_call_chain(&pl->notifier_chain,
+					     PHYLINK_VALIDATE, &info);
 
 	return phylink_is_empty_linkmode(supported) ? -EINVAL : 0;
 }
@@ -290,6 +302,11 @@ static int phylink_parse_mode(struct phylink *pl, struct fwnode_handle *fwnode)
 static void phylink_mac_config(struct phylink *pl,
 			       const struct phylink_link_state *state)
 {
+	struct phylink_notifier_info info = {
+		.link_an_mode = pl->link_an_mode,
+		.state = state
+	};
+
 	netdev_dbg(pl->netdev,
 		   "%s: mode=%s/%s/%s/%s adv=%*pb pause=%02x link=%u an=%u\n",
 		   __func__, phylink_an_mode_str(pl->link_an_mode),
@@ -299,7 +316,12 @@ static void phylink_mac_config(struct phylink *pl,
 		   __ETHTOOL_LINK_MODE_MASK_NBITS, state->advertising,
 		   state->pause, state->link, state->an_enabled);
 
-	pl->ops->mac_config(pl->netdev, pl->link_an_mode, state);
+	if (pl->ops)
+		pl->ops->mac_config(pl->netdev, pl->link_an_mode, state);
+	else
+		blocking_notifier_call_chain(&pl->notifier_chain,
+					     PHYLINK_MAC_CONFIG, &info);
+
 }
 
 static void phylink_mac_config_up(struct phylink *pl,
@@ -311,13 +333,22 @@ static void phylink_mac_config_up(struct phylink *pl,
 
 static void phylink_mac_an_restart(struct phylink *pl)
 {
-	if (pl->link_config.an_enabled &&
-	    phy_interface_mode_is_8023z(pl->link_config.interface))
+	if (!pl->link_config.an_enabled &&
+	    !phy_interface_mode_is_8023z(pl->link_config.interface))
+		return;
+
+	if (pl->ops)
 		pl->ops->mac_an_restart(pl->netdev);
+	else
+		blocking_notifier_call_chain(&pl->notifier_chain,
+					     PHYLINK_MAC_AN_RESTART, NULL);
 }
 
 static int phylink_get_mac_state(struct phylink *pl, struct phylink_link_state *state)
 {
+	struct phylink_notifier_info info = {
+		.state = state,
+	};
 	struct net_device *ndev = pl->netdev;
 
 	linkmode_copy(state->advertising, pl->link_config.advertising);
@@ -330,7 +361,12 @@ static int phylink_get_mac_state(struct phylink *pl, struct phylink_link_state *
 	state->an_complete = 0;
 	state->link = 1;
 
-	return pl->ops->mac_link_state(ndev, state);
+	if (pl->ops)
+		return pl->ops->mac_link_state(ndev, state);
+	else
+		return blocking_notifier_call_chain(&pl->notifier_chain,
+						    PHYLINK_MAC_LINK_STATE,
+						    &info);
 }
 
 /* The fixed state is... fixed except for the link state,
@@ -338,9 +374,17 @@ static int phylink_get_mac_state(struct phylink *pl, struct phylink_link_state *
  */
 static void phylink_get_fixed_state(struct phylink *pl, struct phylink_link_state *state)
 {
+	struct phylink_notifier_info info = {
+		.state = state,
+	};
+
 	*state = pl->link_config;
 	if (pl->get_fixed_state)
 		pl->get_fixed_state(pl->netdev, state);
+	else if (pl->nb)
+		blocking_notifier_call_chain(&pl->notifier_chain,
+					     PHYLINK_GET_FIXED_STATE,
+					     &info);
 	else if (pl->link_gpio)
 		state->link = !!gpiod_get_value_cansleep(pl->link_gpio);
 }
@@ -399,28 +443,54 @@ static void phylink_mac_link_up(struct phylink *pl,
 				struct phylink_link_state link_state)
 {
 	struct net_device *ndev = pl->netdev;
+	struct phylink_notifier_info info = {
+		.link_an_mode = pl->link_an_mode,
+		.interface = pl->phy_state.interface,
+		.phydev = pl->phydev
+	};
 
-	pl->ops->mac_link_up(ndev, pl->link_an_mode,
+	if (pl->ops) {
+		pl->ops->mac_link_up(ndev, pl->link_an_mode,
 			     pl->phy_state.interface,
 			     pl->phydev);
 
-	netif_carrier_on(ndev);
+		netif_carrier_on(ndev);
 
-	netdev_info(ndev,
-		    "Link is Up - %s/%s - flow control %s\n",
-		    phy_speed_to_str(link_state.speed),
-		    phy_duplex_to_str(link_state.duplex),
-		    phylink_pause_to_str(link_state.pause));
+		netdev_info(ndev,
+			    "Link is Up - %s/%s - flow control %s\n",
+			    phy_speed_to_str(link_state.speed),
+			    phy_duplex_to_str(link_state.duplex),
+			    phylink_pause_to_str(link_state.pause));
+	} else {
+		blocking_notifier_call_chain(&pl->notifier_chain,
+					     PHYLINK_MAC_LINK_UP, &info);
+		phydev_info(pl->phydev,
+			    "Link is Up - %s/%s - flow control %s\n",
+			    phy_speed_to_str(link_state.speed),
+			    phy_duplex_to_str(link_state.duplex),
+			    phylink_pause_to_str(link_state.pause));
+	}
 }
 
 static void phylink_mac_link_down(struct phylink *pl)
 {
 	struct net_device *ndev = pl->netdev;
+	struct phylink_notifier_info info = {
+		.link_an_mode = pl->link_an_mode,
+		.interface = pl->phy_state.interface,
+		.phydev = pl->phydev
+	};
 
-	netif_carrier_off(ndev);
-	pl->ops->mac_link_down(ndev, pl->link_an_mode,
+	if (pl->ops) {
+		netif_carrier_off(ndev);
+		pl->ops->mac_link_down(ndev, pl->link_an_mode,
 			       pl->phy_state.interface);
-	netdev_info(ndev, "Link is Down\n");
+		netdev_info(ndev, "Link is Down\n");
+	} else {
+		blocking_notifier_call_chain(&pl->notifier_chain,
+					     PHYLINK_MAC_LINK_DOWN, &info);
+		phydev_info(pl->phydev, "Link is Down\n");
+	}
 }
 
 static void phylink_resolve(struct work_struct *w)
@@ -470,7 +540,10 @@ static void phylink_resolve(struct work_struct *w)
 		}
 	}
 
-	if (link_state.link != netif_carrier_ok(ndev)) {
+	/* Take the branch without checking the carrier status
+	 * if there is no netdevice.
+	 */
+	if (!pl->ops || link_state.link != netif_carrier_ok(ndev)) {
 		if (!link_state.link)
 			phylink_mac_link_down(pl);
 		else
@@ -539,24 +612,12 @@ static int phylink_register_sfp(struct phylink *pl,
 	return 0;
 }
 
-/**
- * phylink_create() - create a phylink instance
- * @ndev: a pointer to the &struct net_device
- * @fwnode: a pointer to a &struct fwnode_handle describing the network
- *	interface
- * @iface: the desired link mode defined by &typedef phy_interface_t
- * @ops: a pointer to a &struct phylink_mac_ops for the MAC.
- *
- * Create a new phylink instance, and parse the link parameters found in @np.
- * This will parse in-band modes, fixed-link or SFP configuration.
- *
- * Returns a pointer to a &struct phylink, or an error-pointer value. Users
- * must use IS_ERR() to check for errors from this function.
- */
-struct phylink *phylink_create(struct net_device *ndev,
-			       struct fwnode_handle *fwnode,
-			       phy_interface_t iface,
-			       const struct phylink_mac_ops *ops)
+static inline struct phylink *
+__phylink_create_raw(struct net_device *ndev,
+		     struct notifier_block *nb,
+		     struct fwnode_handle *fwnode,
+		     phy_interface_t iface,
+		     const struct phylink_mac_ops *ops)
 {
 	struct phylink *pl;
 	int ret;
@@ -567,7 +628,17 @@ struct phylink *phylink_create(struct net_device *ndev,
 
 	mutex_init(&pl->state_mutex);
 	INIT_WORK(&pl->resolve, phylink_resolve);
-	pl->netdev = ndev;
+
+	if (ndev) {
+		pl->netdev = ndev;
+	} else if (nb) {
+		BLOCKING_INIT_NOTIFIER_HEAD(&pl->notifier_chain);
+		blocking_notifier_chain_register(&pl->notifier_chain, nb);
+		pl->nb = nb;
+	} else {
+		return ERR_PTR(-EINVAL);
+	}
+
 	pl->phy_state.interface = iface;
 	pl->link_interface = iface;
 	if (iface == PHY_INTERFACE_MODE_MOCA)
@@ -609,7 +680,51 @@ struct phylink *phylink_create(struct net_device *ndev,
 
 	return pl;
 }
+
+/**
+ * phylink_create() - create a phylink instance
+ * @ndev: a pointer to the &struct net_device
+ * @fwnode: a pointer to a &struct fwnode_handle describing the network
+ *	interface
+ * @iface: the desired link mode defined by &typedef phy_interface_t
+ * @ops: a pointer to a &struct phylink_mac_ops for the MAC.
+ *
+ * Create a new phylink instance, and parse the link parameters found in @np.
+ * This will parse in-band modes, fixed-link or SFP configuration.
+ *
+ * Returns a pointer to a &struct phylink, or an error-pointer value. Users
+ * must use IS_ERR() to check for errors from this function.
+ */
+struct phylink *phylink_create(struct net_device *ndev,
+			       struct fwnode_handle *fwnode,
+			       phy_interface_t iface,
+			       const struct phylink_mac_ops *ops)
+{
+	return __phylink_create_raw(ndev, NULL, fwnode, iface, ops);
+}
 EXPORT_SYMBOL_GPL(phylink_create);
+
+/**
+ * phylink_create_raw() - create a raw phylink instance
+ * @nb: a pointer to a struct notifier_block which which will be called on
+ *	on phylink events
+ * @fwnode: a pointer to a &struct fwnode_handle describing the network
+ *	interface
+ * @iface: the desired link mode defined by &typedef phy_interface_t
+ *
+ * Create a new raw phylink instance, and parse the link parameters found in
+ * @np.  This will parse in-band modes, fixed-link or SFP configuration.
+ *
+ * Returns a pointer to a &struct phylink, or an error-pointer value. Users
+ * must use IS_ERR() to check for errors from this function.
+ */
+struct phylink *phylink_create_raw(struct notifier_block *nb,
+				   struct fwnode_handle *fwnode,
+				   phy_interface_t iface)
+{
+	return __phylink_create_raw(NULL, nb, fwnode, iface, NULL);
+}
+EXPORT_SYMBOL_GPL(phylink_create_raw);
 
 /**
  * phylink_destroy() - cleanup and destroy the phylink instance
@@ -902,7 +1017,8 @@ void phylink_start(struct phylink *pl)
 		    phy_modes(pl->link_config.interface));
 
 	/* Always set the carrier off */
-	netif_carrier_off(pl->netdev);
+	if (pl->netdev)
+		netif_carrier_off(pl->netdev);
 
 	/* Apply the link configuration to the MAC when starting. This allows
 	 * a fixed-link to start with the correct parameters, and also

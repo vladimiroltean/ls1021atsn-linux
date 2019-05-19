@@ -54,6 +54,24 @@ struct phylink_link_state {
 	unsigned int an_complete:1;
 };
 
+enum phylink_cmd {
+	PHYLINK_VALIDATE = 1,
+	PHYLINK_MAC_LINK_STATE,
+	PHYLINK_MAC_AN_RESTART,
+	PHYLINK_MAC_CONFIG,
+	PHYLINK_MAC_LINK_DOWN,
+	PHYLINK_MAC_LINK_UP,
+	PHYLINK_GET_FIXED_STATE,
+};
+
+struct phylink_notifier_info {
+	struct phylink_link_state *state;
+	unsigned long *supported;
+	u8 link_an_mode;
+	phy_interface_t interface;
+	struct phy_device *phydev;
+};
+
 /**
  * struct phylink_mac_ops - MAC operations structure.
  * @validate: Validate and update the link configuration.
@@ -200,6 +218,9 @@ void mac_link_up(struct net_device *ndev, unsigned int mode,
 
 struct phylink *phylink_create(struct net_device *, struct fwnode_handle *,
 	phy_interface_t iface, const struct phylink_mac_ops *ops);
+struct phylink *phylink_create_raw(struct notifier_block *nb,
+				   struct fwnode_handle *fwnode,
+				   phy_interface_t iface);
 void phylink_destroy(struct phylink *);
 
 int phylink_connect_phy(struct phylink *, struct phy_device *);
