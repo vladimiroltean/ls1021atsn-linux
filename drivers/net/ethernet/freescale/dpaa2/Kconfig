@@ -16,3 +16,16 @@ config FSL_DPAA2_PTP_CLOCK
 	help
 	  This driver adds support for using the DPAA2 1588 timer module
 	  as a PTP clock.
+
+config FSL_DPAA2_MAC
+	tristate "DPAA2 MAC / PHY interface"
+	depends on FSL_MC_BUS
+	select MDIO_BUS_MUX_MMIOREG
+	select FSL_XGMAC_MDIO
+	select PHYLINK
+	help
+	  Prototype driver for DPAA2 MAC / PHY interface object.
+	  This driver works as a proxy between phylink including phy drivers and
+	  the MC firmware.  It receives updates on link state changes from phylink
+	  and forwards them to MC and receives interrupt from MC whenever a
+	  request is made to change the link state.
