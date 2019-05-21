@@ -11,20 +11,44 @@
 
 #include "dsa_priv.h"
 
-/* Allocating two VLAN tags per port - one for the RX VID and
- * the other for the TX VID - see below
+/* Binary structure of the fake 12-bit VID field (when the TPID is
+ * ETH_P_DSA_8021Q):
+ *
+ * +-----+---------------------+------+-----------------------------+------+
+ * | DIR |      SWITCH_ID      | RSVD |             PORT            | RSVD |
+ * +-----+---------------------+------+-----------------------------+------+
+ * 11    10                    7      6                             1      0
+ *
+ * DIR - VID[11:10]:
+ *	Direction flag. 0 for RX VLAN, 1 for TX VLAN
+ *
+ * SWITCH_ID - VID[9:6]:
+ *	Index of switch within DSA tree. Must be between 0 and
+ *	DSA_MAX_SWITCHES - 1.
+ *
+ * PORT - VID[5:0]:
+ *	Index of switch port. Must be between 0 and DSA_MAX_PORTS - 1.
  */
-#define DSA_8021Q_VID_RANGE	(DSA_MAX_SWITCHES * DSA_MAX_PORTS)
-#define DSA_8021Q_VID_BASE	(VLAN_N_VID - 2 * DSA_8021Q_VID_RANGE - 1)
-#define DSA_8021Q_RX_VID_BASE	(DSA_8021Q_VID_BASE)
-#define DSA_8021Q_TX_VID_BASE	(DSA_8021Q_VID_BASE + DSA_8021Q_VID_RANGE)
+
+#define DSA_8021Q_DIR_TX		BIT(11)
+
+#define DSA_8021Q_SWITCH_ID_SHIFT	6
+#define DSA_8021Q_SWITCH_ID_MASK	GENMASK(9, 6)
+#define DSA_8021Q_SWITCH_ID(x)		(((x) << DSA_8021Q_SWITCH_ID_SHIFT) & \
+						 DSA_8021Q_SWITCH_ID_MASK)
+
+#define DSA_8021Q_PORT_MASK		GENMASK(5, 0)
+#define DSA_8021Q_PORT_SHIFT		0
+#define DSA_8021Q_PORT(x)		(((x) << DSA_8021Q_PORT_SHIFT) & \
+						 DSA_8021Q_PORT_MASK)
 
 /* Returns the VID to be inserted into the frame from xmit for switch steering
  * instructions on egress. Encodes switch ID and port ID.
  */
 u16 dsa_8021q_tx_vid(struct dsa_switch *ds, int port)
 {
-	return DSA_8021Q_TX_VID_BASE + (DSA_MAX_PORTS * ds->index) + port;
+	return DSA_8021Q_DIR_TX | DSA_8021Q_SWITCH_ID(ds->index) |
+	       DSA_8021Q_PORT(port);
 }
 EXPORT_SYMBOL_GPL(dsa_8021q_tx_vid);
 
@@ -33,21 +57,21 @@ EXPORT_SYMBOL_GPL(dsa_8021q_tx_vid);
  */
 u16 dsa_8021q_rx_vid(struct dsa_switch *ds, int port)
 {
-	return DSA_8021Q_RX_VID_BASE + (DSA_MAX_PORTS * ds->index) + port;
+	return DSA_8021Q_SWITCH_ID(ds->index) | DSA_8021Q_PORT(port);
 }
 EXPORT_SYMBOL_GPL(dsa_8021q_rx_vid);
 
 /* Returns the decoded switch ID from the RX VID. */
 int dsa_8021q_rx_switch_id(u16 vid)
 {
-	return ((vid - DSA_8021Q_RX_VID_BASE) / DSA_MAX_PORTS);
+	return (vid & DSA_8021Q_SWITCH_ID_MASK) >> DSA_8021Q_SWITCH_ID_SHIFT;
 }
 EXPORT_SYMBOL_GPL(dsa_8021q_rx_switch_id);
 
 /* Returns the decoded port ID from the RX VID. */
 int dsa_8021q_rx_source_port(u16 vid)
 {
-	return ((vid - DSA_8021Q_RX_VID_BASE) % DSA_MAX_PORTS);
+	return (vid & DSA_8021Q_PORT_MASK) >> DSA_8021Q_PORT_SHIFT;
 }
 EXPORT_SYMBOL_GPL(dsa_8021q_rx_source_port);
 
