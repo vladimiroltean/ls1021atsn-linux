@@ -577,10 +577,8 @@ int sja1105_dynamic_config_read(struct sja1105_private *priv,
 	int retries = 3;
 	int rc;
 
-	if (blk_idx >= BLK_IDX_MAX_DYN) {
-		dev_err(priv->ds->dev, "%s: %d\n", __func__, __LINE__);
+	if (blk_idx >= BLK_IDX_MAX_DYN)
 		return -ERANGE;
-	}
 
 	ops = &priv->info->dyn_ops[blk_idx];
 
@@ -609,6 +607,9 @@ int sja1105_dynamic_config_read(struct sja1105_private *priv,
 	}
 	cmd.valident = true;
 	ops->cmd_packing(packed_buf, &cmd, PACK);
+
+	if (cmd.search)
+		ops->entry_packing(packed_buf, entry, PACK);
 
 	/* Send SPI write operation: read config table entry */
 	rc = sja1105_spi_send_packed_buf(priv, SPI_WRITE, ops->addr,
