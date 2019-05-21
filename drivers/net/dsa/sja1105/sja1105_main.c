@@ -1213,12 +1213,12 @@ static void sja1105_bridge_stp_state_set(struct dsa_switch *ds, int port,
 	case BR_STATE_LEARNING:
 		mac[port].ingress   = true;
 		mac[port].egress    = false;
-		mac[port].dyn_learn = dp->br_port_flags & BR_LEARNING;
+		mac[port].dyn_learn = !!(dp->br_port_flags & BR_LEARNING);
 		break;
 	case BR_STATE_FORWARDING:
 		mac[port].ingress   = true;
 		mac[port].egress    = true;
-		mac[port].dyn_learn = dp->br_port_flags & BR_LEARNING;
+		mac[port].dyn_learn = !!(dp->br_port_flags & BR_LEARNING);
 		break;
 	default:
 		dev_err(ds->dev, "invalid STP state: %d\n", state);
@@ -1254,10 +1254,10 @@ static u8 sja1105_stp_state_get(struct sja1105_private *priv, int port)
 	if (mac[port].ingress && !mac[port].egress && !mac[port].dyn_learn)
 		return BR_STATE_LISTENING;
 	if (mac[port].ingress && !mac[port].egress &&
-	    mac[port].dyn_learn == (dp->br_port_flags & BR_LEARNING))
+	    mac[port].dyn_learn == !!(dp->br_port_flags & BR_LEARNING))
 		return BR_STATE_LEARNING;
 	if (mac[port].ingress && mac[port].egress &&
-	    mac[port].dyn_learn == (dp->br_port_flags & BR_LEARNING))
+	    mac[port].dyn_learn == !!(dp->br_port_flags & BR_LEARNING))
 		return BR_STATE_FORWARDING;
 	/* This is really an error condition if the MAC was in none of the STP
 	 * states above. But treating the port as disabled does nothing, which
