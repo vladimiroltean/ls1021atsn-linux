@@ -267,7 +267,6 @@ static int dsa_port_setup(struct dsa_port *dp)
 		return 0;
 
 	memset(&dp->devlink_port, 0, sizeof(dp->devlink_port));
-	dp->br_port_flags = BR_LEARNING | BR_FLOOD_MASK;
 	dp->mac = of_get_mac_address(dp->dn);
 
 	switch (dp->type) {

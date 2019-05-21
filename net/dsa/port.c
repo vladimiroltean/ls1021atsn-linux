@@ -107,7 +107,7 @@ int dsa_port_bridge_join(struct dsa_port *dp, struct net_device *br)
 	int err;
 
 	/* Set the flooding mode before joining the port in the switch */
-	err = dsa_port_bridge_flags(dp, BR_FLOOD | BR_MCAST_FLOOD, NULL);
+	err = dsa_port_bridge_flags(dp, BR_LEARNING | BR_FLOOD_MASK, NULL);
 	if (err)
 		return err;
 
