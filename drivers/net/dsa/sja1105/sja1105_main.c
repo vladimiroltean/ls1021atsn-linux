@@ -969,30 +969,33 @@ int sja1105pqrs_fdb_add(struct dsa_switch *ds, int port,
 	struct sja1105_private *priv = ds->priv;
 	int rc, i;
 
+	/* Search for an existing entry in the FDB table */
 	l2_lookup.macaddr = ether_addr_to_u64(addr);
 	l2_lookup.vlanid = vid;
 	l2_lookup.iotag = SJA1105_S_TAG;
 	l2_lookup.mask_macaddr = GENMASK_ULL(ETH_ALEN * 8 - 1, 0);
 	l2_lookup.mask_vlanid = VLAN_VID_MASK;
+	l2_lookup.mask_iotag = BIT(0);
 	l2_lookup.destports = BIT(port);
-	/*l2_lookup.mask_iotag = BIT(0);*/
 
 	rc = sja1105_dynamic_config_read(priv, BLK_IDX_L2_LOOKUP,
 					 SJA1105_SEARCH, &l2_lookup);
-	dev_err(ds->dev, "%s: macaddr %08llx, vid %llu, index %llu, destports %llx rc %d\n",
-			__func__, l2_lookup.macaddr, l2_lookup.vlanid, l2_lookup.index, l2_lookup.destports, rc);
-	if (rc >= 0) {
+	if (rc == 0) {
+		/* Found and this port is already in the entry's
+		 * port mask => job done
+		 */
 		if (l2_lookup.destports & BIT(port))
 			return 0;
 		/* l2_lookup.index is populated by the switch in case it
 		 * found something.
 		 */
+		l2_lookup.destports |= BIT(port);
 		goto skip_finding_an_index;
 	}
 
-	/* Try to find an unused place in the FDB. This is slightly
-	 * inefficient because the strategy is knock-knock at every possible
-	 * position from 0 to 1023, each time.
+	/* Not found, so try to find an unused spot in the FDB.
+	 * This is slightly inefficient because the strategy is knock-knock at
+	 * every possible position from 0 to 1023.
 	 */
 	for (i = 0; i < SJA1105_MAX_L2_LOOKUP_COUNT; i++) {
 		rc = sja1105_dynamic_config_read(priv, BLK_IDX_L2_LOOKUP,
@@ -1007,8 +1010,6 @@ int sja1105pqrs_fdb_add(struct dsa_switch *ds, int port,
 	l2_lookup.index = i;
 
 skip_finding_an_index:
-	l2_lookup.destports |= BIT(port);
-
 	return sja1105_dynamic_config_write(priv, BLK_IDX_L2_LOOKUP,
 					    l2_lookup.index, &l2_lookup,
 					    true);
@@ -1027,13 +1028,11 @@ int sja1105pqrs_fdb_del(struct dsa_switch *ds, int port,
 	l2_lookup.iotag = SJA1105_S_TAG;
 	l2_lookup.mask_macaddr = GENMASK_ULL(ETH_ALEN * 8 - 1, 0);
 	l2_lookup.mask_vlanid = VLAN_VID_MASK;
+	l2_lookup.mask_iotag = BIT(0);
 	l2_lookup.destports = BIT(port);
-	/*l2_lookup.mask_iotag = BIT(0);*/
 
 	rc = sja1105_dynamic_config_read(priv, BLK_IDX_L2_LOOKUP,
 					 SJA1105_SEARCH, &l2_lookup);
-	dev_err(ds->dev, "%s: macaddr %08llx, vid %llu, index %llu, destports %llx rc %d\n",
-			__func__, l2_lookup.macaddr, l2_lookup.vlanid, l2_lookup.index, l2_lookup.destports, rc);
 	if (rc < 0)
 		return 0;
 
