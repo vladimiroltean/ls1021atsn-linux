@@ -1929,27 +1929,27 @@ static int sja1105_setup_egress_floods(struct dsa_switch *ds, int port,
 {
 	struct sja1105_l2_forwarding_entry *l2_fwd;
 	struct sja1105_private *priv = ds->priv;
-	int from, rc;
+	int to;
 
 	l2_fwd = priv->static_config.tables[BLK_IDX_L2_FORWARDING].entries;
 
-	for (from = 0; from < SJA1105_NUM_PORTS; from++) {
+	for (to = 0; to < SJA1105_NUM_PORTS; to++) {
+		if (to == port)
+			continue;
+
 		if (unicast)
-			l2_fwd[from].fl_domain |= BIT(port);
+			l2_fwd[port].fl_domain |= BIT(to);
 		else
-			l2_fwd[from].fl_domain &= ~BIT(port);
+			l2_fwd[port].fl_domain &= ~BIT(to);
 
 		if (broadcast)
-			l2_fwd[from].bc_domain |= BIT(port);
+			l2_fwd[port].bc_domain |= BIT(to);
 		else
-			l2_fwd[from].bc_domain &= ~BIT(port);
-
-		rc = sja1105_dynamic_config_write(priv, BLK_IDX_L2_FORWARDING,
-						  from, &l2_fwd[from], true);
-		if (rc < 0)
-			return rc;
+			l2_fwd[port].bc_domain &= ~BIT(to);
 	}
-	return 0;
+	dev_err(ds->dev, "%s: port %d ucast %d mcast %d bcast %d fl_domain %llx bc_domain %llx\n", __func__, port, unicast, multicast, broadcast, l2_fwd[port].fl_domain, l2_fwd[port].bc_domain);
+	return sja1105_dynamic_config_write(priv, BLK_IDX_L2_FORWARDING,
+					    port, &l2_fwd[port], true);
 }
 
 static int sja1105_setup_learning(struct dsa_switch *ds, int port, bool on)
