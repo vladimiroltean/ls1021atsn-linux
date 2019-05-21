@@ -197,18 +197,32 @@ struct sja1105_vlan_lookup_entry {
 };
 
 struct sja1105_l2_lookup_entry {
-	u64 mirrvlan;      /* P/Q/R/S only - LOCKEDS=1 */
-	u64 mirr;          /* P/Q/R/S only - LOCKEDS=1 */
-	u64 retag;         /* P/Q/R/S only - LOCKEDS=1 */
-	u64 mask_iotag;    /* P/Q/R/S only */
-	u64 mask_vlanid;   /* P/Q/R/S only */
-	u64 mask_macaddr;  /* P/Q/R/S only */
-	u64 iotag;         /* P/Q/R/S only */
 	u64 vlanid;
 	u64 macaddr;
 	u64 destports;
 	u64 enfport;
 	u64 index;
+	/* P/Q/R/S only */
+	u64 mask_iotag;
+	u64 mask_vlanid;
+	u64 mask_macaddr;
+	u64 iotag;
+	bool lockeds;
+	union {
+		/* LOCKEDS=1: Static FDB entries */
+		struct {
+			u64 tsreg;
+			u64 mirrvlan;
+			u64 takets;
+			u64 mirr;
+			u64 retag;
+		};
+		/* LOCKEDS=0: Dynamically learned FDB entries */
+		struct {
+			u64 touched;
+			u64 age;
+		};
+	};
 };
 
 struct sja1105_l2_lookup_params_entry {
