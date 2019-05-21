@@ -322,6 +322,16 @@ static int dsa_port_setup(struct dsa_port *dp)
 			devlink_port_type_eth_set(&dp->devlink_port, dp->slave);
 		break;
 	}
+	/* The bridge driver can't set learning/flooding settings for ports
+	 * with no netdevice, so we need to.
+	 */
+	if (dp->type == DSA_PORT_TYPE_CPU || dp->type == DSA_PORT_TYPE_DSA) {
+		if (ds->ops->port_egress_floods)
+			ds->ops->port_egress_floods(ds, dp->index, true,
+						    true, true);
+		if (ds->ops->port_learning)
+			ds->ops->port_learning(ds, dp->index, true);
+	}
 
 	return 0;
 }
