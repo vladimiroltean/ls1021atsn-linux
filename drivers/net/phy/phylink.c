@@ -543,7 +543,9 @@ static void phylink_resolve(struct work_struct *w)
 	/* Take the branch without checking the carrier status
 	 * if there is no netdevice.
 	 */
-	if (!pl->ops || link_state.link != netif_carrier_ok(ndev)) {
+	if ((!pl->ops && link_state.link != pl->phy_state.link) ||
+	    ( pl->ops && link_state.link != netif_carrier_ok(ndev))) {
+		pl->phy_state.link = link_state.link;
 		if (!link_state.link)
 			phylink_mac_link_down(pl);
 		else
