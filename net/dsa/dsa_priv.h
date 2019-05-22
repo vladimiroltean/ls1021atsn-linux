@@ -164,6 +164,25 @@ int dsa_port_vlan_del(struct dsa_port *dp,
 		      const struct switchdev_obj_port_vlan *vlan);
 int dsa_port_vid_add(struct dsa_port *dp, u16 vid, u16 flags);
 int dsa_port_vid_del(struct dsa_port *dp, u16 vid);
+void dsa_port_phylink_validate(struct dsa_port *dp,
+			       unsigned long *supported,
+			       struct phylink_link_state *state);
+int dsa_port_phylink_mac_link_state(struct dsa_port *dp,
+				    struct phylink_link_state *state);
+void dsa_port_phylink_mac_config(struct dsa_port *dp,
+				 unsigned int mode,
+				 const struct phylink_link_state *state);
+void dsa_port_phylink_mac_an_restart(struct dsa_port *dp);
+void dsa_port_phylink_mac_link_down(struct dsa_port *dp,
+				    unsigned int mode,
+				    phy_interface_t interface,
+				    struct phy_device *phydev);
+void dsa_port_phylink_mac_link_up(struct dsa_port *dp,
+				  unsigned int mode,
+				  phy_interface_t interface,
+				  struct phy_device *phydev);
+void dsa_port_phylink_fixed_state(struct dsa_port *dp,
+				  struct phylink_link_state *state);
 int dsa_port_link_register_of(struct dsa_port *dp);
 void dsa_port_link_unregister_of(struct dsa_port *dp);
 

@@ -445,6 +445,102 @@ static struct phy_device *dsa_port_get_phy_device(struct dsa_port *dp)
 	return phydev;
 }
 
+void dsa_port_phylink_validate(struct dsa_port *dp,
+			       unsigned long *supported,
+			       struct phylink_link_state *state)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->phylink_validate)
+		return;
+
+	ds->ops->phylink_validate(ds, dp->index, supported, state);
+}
+EXPORT_SYMBOL(dsa_port_phylink_validate);
+
+int dsa_port_phylink_mac_link_state(struct dsa_port *dp,
+				    struct phylink_link_state *state)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	/* Only called for SGMII and 802.3z */
+	if (!ds->ops->phylink_mac_link_state)
+		return -EOPNOTSUPP;
+
+	return ds->ops->phylink_mac_link_state(ds, dp->index, state);
+}
+EXPORT_SYMBOL(dsa_port_phylink_mac_link_state);
+
+void dsa_port_phylink_mac_config(struct dsa_port *dp,
+				 unsigned int mode,
+				 const struct phylink_link_state *state)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->phylink_mac_config)
+		return;
+
+	ds->ops->phylink_mac_config(ds, dp->index, mode, state);
+}
+EXPORT_SYMBOL(dsa_port_phylink_mac_config);
+
+void dsa_port_phylink_mac_an_restart(struct dsa_port *dp)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->phylink_mac_an_restart)
+		return;
+
+	ds->ops->phylink_mac_an_restart(ds, dp->index);
+}
+EXPORT_SYMBOL(dsa_port_phylink_mac_an_restart);
+
+void dsa_port_phylink_mac_link_down(struct dsa_port *dp,
+				    unsigned int mode,
+				    phy_interface_t interface,
+				    struct phy_device *phydev)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->phylink_mac_link_down) {
+		if (ds->ops->adjust_link && phydev)
+			ds->ops->adjust_link(ds, dp->index, phydev);
+		return;
+	}
+
+	ds->ops->phylink_mac_link_down(ds, dp->index, mode, interface);
+}
+EXPORT_SYMBOL(dsa_port_phylink_mac_link_down);
+
+void dsa_port_phylink_mac_link_up(struct dsa_port *dp,
+				  unsigned int mode,
+				  phy_interface_t interface,
+				  struct phy_device *phydev)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->phylink_mac_link_up) {
+		if (ds->ops->adjust_link && phydev)
+			ds->ops->adjust_link(ds, dp->index, phydev);
+		return;
+	}
+
+	ds->ops->phylink_mac_link_up(ds, dp->index, mode, interface, phydev);
+}
+EXPORT_SYMBOL(dsa_port_phylink_mac_link_up);
+
+void dsa_port_phylink_fixed_state(struct dsa_port *dp,
+				  struct phylink_link_state *state)
+{
+	struct dsa_switch *ds = dp->ds;
+
+	/* No need to check that this operation is valid, the callback would
+	 * not be called if it was not.
+	 */
+	ds->ops->phylink_fixed_state(ds, dp->index, state);
+}
+EXPORT_SYMBOL(dsa_port_phylink_fixed_state);
+
 static int dsa_port_setup_phy_of(struct dsa_port *dp, bool enable)
 {
 	struct dsa_switch *ds = dp->ds;

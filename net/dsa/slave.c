@@ -1180,25 +1180,16 @@ static void dsa_slave_phylink_validate(struct net_device *dev,
 				       struct phylink_link_state *state)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
 
-	if (!ds->ops->phylink_validate)
-		return;
-
-	ds->ops->phylink_validate(ds, dp->index, supported, state);
+	dsa_port_phylink_validate(dp, supported, state);
 }
 
 static int dsa_slave_phylink_mac_link_state(struct net_device *dev,
 					    struct phylink_link_state *state)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
 
-	/* Only called for SGMII and 802.3z */
-	if (!ds->ops->phylink_mac_link_state)
-		return -EOPNOTSUPP;
-
-	return ds->ops->phylink_mac_link_state(ds, dp->index, state);
+	dsa_port_phylink_mac_link_state(dp, state);
 }
 
 static void dsa_slave_phylink_mac_config(struct net_device *dev,
@@ -1206,23 +1197,15 @@ static void dsa_slave_phylink_mac_config(struct net_device *dev,
 					 const struct phylink_link_state *state)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
 
-	if (!ds->ops->phylink_mac_config)
-		return;
-
-	ds->ops->phylink_mac_config(ds, dp->index, mode, state);
+	dsa_port_phylink_mac_config(dp, mode, state);
 }
 
 static void dsa_slave_phylink_mac_an_restart(struct net_device *dev)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
 
-	if (!ds->ops->phylink_mac_an_restart)
-		return;
-
-	ds->ops->phylink_mac_an_restart(ds, dp->index);
+	dsa_port_phylink_mac_an_restart(dp);
 }
 
 static void dsa_slave_phylink_mac_link_down(struct net_device *dev,
@@ -1230,15 +1213,8 @@ static void dsa_slave_phylink_mac_link_down(struct net_device *dev,
 					    phy_interface_t interface)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
 
-	if (!ds->ops->phylink_mac_link_down) {
-		if (ds->ops->adjust_link && dev->phydev)
-			ds->ops->adjust_link(ds, dp->index, dev->phydev);
-		return;
-	}
-
-	ds->ops->phylink_mac_link_down(ds, dp->index, mode, interface);
+	dsa_port_phylink_mac_link_down(dp, mode, interface, dev->phydev);
 }
 
 static void dsa_slave_phylink_mac_link_up(struct net_device *dev,
@@ -1247,15 +1223,8 @@ static void dsa_slave_phylink_mac_link_up(struct net_device *dev,
 					  struct phy_device *phydev)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
 
-	if (!ds->ops->phylink_mac_link_up) {
-		if (ds->ops->adjust_link && dev->phydev)
-			ds->ops->adjust_link(ds, dp->index, dev->phydev);
-		return;
-	}
-
-	ds->ops->phylink_mac_link_up(ds, dp->index, mode, interface, phydev);
+	dsa_port_phylink_mac_link_up(dp, mode, interface, phydev);
 }
 
 static const struct phylink_mac_ops dsa_slave_phylink_mac_ops = {
@@ -1279,12 +1248,8 @@ static void dsa_slave_phylink_fixed_state(struct net_device *dev,
 					  struct phylink_link_state *state)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
 
-	/* No need to check that this operation is valid, the callback would
-	 * not be called if it was not.
-	 */
-	ds->ops->phylink_fixed_state(ds, dp->index, state);
+	dsa_port_phylink_fixed_state(dp, state);
 }
 
 /* slave device setup *******************************************************/
