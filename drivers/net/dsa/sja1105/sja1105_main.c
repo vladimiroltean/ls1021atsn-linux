@@ -387,8 +387,8 @@ static int sja1105_init_l2_forwarding_params(struct sja1105_private *priv)
 static int sja1105_init_general_params(struct sja1105_private *priv)
 {
 	struct sja1105_general_params_entry default_general_params = {
-		/* Disallow dynamic changing of the mirror port */
-		.mirr_ptacu = 0,
+		/* Allow dynamic changing of the mirror port */
+		.mirr_ptacu = true,
 		.switchid = priv->ds->index,
 		/* Priority queue for link-local frames trapped to CPU */
 		.hostprio = 7,
@@ -2105,6 +2105,49 @@ static int sja1105_setup_learning(struct dsa_switch *ds, int port, bool on)
 					    &mac[port], true);
 }
 
+static int sja1105_mirror_apply(struct sja1105_private *priv, int from, int to,
+				bool ingress, bool enabled)
+{
+	struct sja1105_general_params_entry *general_params;
+	struct sja1105_mac_config_entry *mac;
+	struct sja1105_table *table;
+	int rc;
+
+	table = &priv->static_config.tables[BLK_IDX_GENERAL_PARAMS];
+	general_params = table->entries;
+	general_params->mirr_port = to;
+
+	rc = sja1105_dynamic_config_write(priv, BLK_IDX_GENERAL_PARAMS, 0,
+					  general_params, true);
+	if (rc < 0)
+		return rc;
+
+	mac = priv->static_config.tables[BLK_IDX_MAC_CONFIG].entries;
+
+	if (ingress)
+		mac[from].ing_mirr = enabled;
+	else
+		mac[from].egr_mirr = enabled;
+
+	return sja1105_dynamic_config_write(priv, BLK_IDX_MAC_CONFIG, from,
+					   &mac[from], true);
+}
+
+static int sja1105_mirror_add(struct dsa_switch *ds, int port,
+			      struct dsa_mall_mirror_tc_entry *mirror,
+			      bool ingress)
+{
+	return sja1105_mirror_apply(ds->priv, port, mirror->to_local_port,
+				    ingress, true);
+}
+
+static void sja1105_mirror_del(struct dsa_switch *ds, int port,
+		    struct dsa_mall_mirror_tc_entry *mirror)
+{
+	sja1105_mirror_apply(ds->priv, port, mirror->to_local_port,
+			     mirror->ingress, false);
+}
+
 static const struct dsa_switch_ops sja1105_switch_ops = {
 	.get_tag_protocol	= sja1105_get_tag_protocol,
 	.setup			= sja1105_setup,
@@ -2138,6 +2181,8 @@ static const struct dsa_switch_ops sja1105_switch_ops = {
 	.port_hwtstamp_set	= sja1105_hwtstamp_set,
 	.port_rxtstamp		= sja1105_port_rxtstamp,
 	.port_txtstamp		= sja1105_port_txtstamp,
+	.port_mirror_add	= sja1105_mirror_add,
+	.port_mirror_del	= sja1105_mirror_del,
 };
 
 static int sja1105_check_device_id(struct sja1105_private *priv)
