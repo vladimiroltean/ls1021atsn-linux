@@ -827,7 +827,7 @@ static int dsa_slave_add_cls_matchall(struct net_device *dev,
 	__be16 protocol = cls->common.protocol;
 	struct dsa_switch *ds = dp->ds;
 	struct flow_action_entry *act;
-	struct dsa_port *to_dp;
+	const struct dsa_port *to_dp;
 	int err = -EOPNOTSUPP;
 
 	if (!ds->ops->port_mirror_add)
@@ -844,7 +844,11 @@ static int dsa_slave_add_cls_matchall(struct net_device *dev,
 		if (!act->dev)
 			return -EINVAL;
 
-		if (!dsa_slave_dev_check(act->dev))
+		if (dsa_slave_dev_check(act->dev))
+			to_dp = dsa_slave_to_port(act->dev);
+		else if (act->dev == dp->cpu_dp->master)
+			to_dp = dp->cpu_dp;
+		else
 			return -EOPNOTSUPP;
 
 		mall_tc_entry = kzalloc(sizeof(*mall_tc_entry), GFP_KERNEL);
@@ -854,8 +858,6 @@ static int dsa_slave_add_cls_matchall(struct net_device *dev,
 		mall_tc_entry->cookie = cls->cookie;
 		mall_tc_entry->type = DSA_PORT_MALL_MIRROR;
 		mirror = &mall_tc_entry->mirror;
-
-		to_dp = dsa_slave_to_port(act->dev);
 
 		mirror->to_local_port = to_dp->index;
 		mirror->ingress = ingress;
