@@ -181,6 +181,8 @@
  */
 #define QUADSPI_QUIRK_BASE_INTERNAL	BIT(4)
 
+#define QUADSPI_MIN_IOMAP		SZ_4M
+
 struct fsl_qspi_devtype_data {
 	unsigned int rxfifo;
 	unsigned int txfifo;
@@ -241,6 +243,8 @@ struct fsl_qspi {
 	void __iomem *iobase;
 	void __iomem *ahb_addr;
 	u32 memmap_phy;
+	u32 memmap_start;
+	u32 memmap_len;
 	struct clk *clk, *clk_en;
 	struct device *dev;
 	struct completion c;
@@ -521,9 +525,27 @@ static void fsl_qspi_select_mem(struct fsl_qspi *q, struct spi_device *spi)
 
 static void fsl_qspi_read_ahb(struct fsl_qspi *q, const struct spi_mem_op *op)
 {
+	u32 len = op->data.nbytes;
+
+	/* if necessary, ioremap before AHB read */
+	if ((!q->ahb_addr) || op->addr.val < q->memmap_start ||
+	    op->addr.val + len > q->memmap_start + q->memmap_len) {
+		if (q->ahb_addr)
+			iounmap(q->ahb_addr);
+
+		q->memmap_start = op->addr.val;
+		q->memmap_len = len > QUADSPI_MIN_IOMAP ?
+				len : QUADSPI_MIN_IOMAP;
+
+		q->ahb_addr = ioremap_wc(q->memmap_phy + q->memmap_start,
+					 q->memmap_len);
+		if (!q->ahb_addr)
+			dev_err(q->dev, "failed to alloc memory\n");
+	}
+
 	memcpy_fromio(op->data.buf.in,
-		      q->ahb_addr + q->selected * q->devtype_data->ahb_buf_size,
-		      op->data.nbytes);
+		      q->ahb_addr + op->addr.val - q->memmap_start +
+		      q->selected * q->devtype_data->ahb_buf_size, len);
 }
 
 static void fsl_qspi_fill_txfifo(struct fsl_qspi *q,
@@ -831,12 +853,6 @@ static int fsl_qspi_probe(struct platform_device *pdev)
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 					"QuadSPI-memory");
-	q->ahb_addr = devm_ioremap_resource(dev, res);
-	if (IS_ERR(q->ahb_addr)) {
-		ret = PTR_ERR(q->ahb_addr);
-		goto err_put_ctrl;
-	}
-
 	q->memmap_phy = res->start;
 
 	/* find the clocks */
@@ -912,6 +928,9 @@ static int fsl_qspi_remove(struct platform_device *pdev)
 	fsl_qspi_clk_disable_unprep(q);
 
 	mutex_destroy(&q->lock);
+
+	if (q->ahb_addr)
+		iounmap(q->ahb_addr);
 
 	return 0;
 }
