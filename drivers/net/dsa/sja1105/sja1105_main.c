@@ -406,8 +406,8 @@ static int sja1105_init_general_params(struct sja1105_private *priv)
 		 * by installing a temporary 'management route'
 		 */
 		.host_port = dsa_upstream_port(priv->ds, 0),
-		/* Default to an invalid value */
-		.mirr_port = SJA1105_NUM_PORTS,
+		/* Same as host port */
+		.mirr_port = dsa_upstream_port(priv->ds, 0),
 		/* Link-local traffic received on casc_port will be forwarded
 		 * to host_port without embedding the source port and device ID
 		 * info in the destination MAC address (presumably because it
@@ -2115,11 +2115,7 @@ static int sja1105_mirror_apply(struct sja1105_private *priv, int from, int to,
 
 	table = &priv->static_config.tables[BLK_IDX_GENERAL_PARAMS];
 	general_params = table->entries;
-	if (enabled) {
-		if (general_params->mirr_port != SJA1105_NUM_PORTS &&
-		    general_params->mirr_port != to)
-			general_params->mirr_port = to;
-	} else {
+	general_params->mirr_port = to;
 
 	rc = sja1105_dynamic_config_write(priv, BLK_IDX_GENERAL_PARAMS, 0,
 					  general_params, true);
