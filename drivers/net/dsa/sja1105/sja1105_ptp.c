@@ -56,6 +56,10 @@
 
 struct sja1105_ptp_cmd {
 	u64 resptp;       /* reset */
+	u64 corrclk4ts;   /* if (1) timestamps are based on ptpclk,
+			   * if (0) timestamps are based on ptptsclk
+			   */
+	u64 ptpclkadd;    /* enum sja1105_ptp_clk_mode */
 };
 
 int sja1105_get_ts_info(struct dsa_switch *ds, int port,
@@ -90,6 +94,8 @@ int sja1105et_ptp_cmd(const void *ctx, const void *data)
 
 	sja1105_pack(buf, &valid,           31, 31, size);
 	sja1105_pack(buf, &cmd->resptp,      2,  2, size);
+	sja1105_pack(buf, &cmd->corrclk4ts,  1,  1, size);
+	sja1105_pack(buf, &cmd->ptpclkadd,   0,  0, size);
 
 	return sja1105_spi_send_packed_buf(priv, SPI_WRITE, regs->ptp_control,
 					   buf, SJA1105_SIZE_PTP_CMD);
@@ -107,6 +113,8 @@ int sja1105pqrs_ptp_cmd(const void *ctx, const void *data)
 
 	sja1105_pack(buf, &valid,           31, 31, size);
 	sja1105_pack(buf, &cmd->resptp,      3,  3, size);
+	sja1105_pack(buf, &cmd->corrclk4ts,  2,  2, size);
+	sja1105_pack(buf, &cmd->ptpclkadd,   0,  0, size);
 
 	return sja1105_spi_send_packed_buf(priv, SPI_WRITE, regs->ptp_control,
 					   buf, SJA1105_SIZE_PTP_CMD);
@@ -218,14 +226,18 @@ int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, u64 *ts)
 
 int sja1105_ptp_reset(struct sja1105_private *priv)
 {
-	struct dsa_switch *ds = priv->ds;
 	struct sja1105_ptp_cmd cmd = {0};
 	int rc;
 
 	mutex_lock(&priv->ptp_lock);
 
 	cmd.resptp = 1;
-	dev_dbg(ds->dev, "Resetting PTP clock\n");
+	cmd.corrclk4ts = 1;
+	cmd.ptpclkadd = PTP_SET_MODE;
+	priv->ptp_tstamps_use_corrected_clk = cmd.corrclk4ts;
+	priv->ptp_mode = cmd.ptpclkadd;
+
+	dev_dbg(priv->ds->dev, "Resetting PTP clock\n");
 	rc = priv->info->ptp_cmd(priv, &cmd);
 
 	timecounter_init(&priv->tstamp_tc, &priv->tstamp_cc,
@@ -336,6 +348,31 @@ static u64 sja1105_ptptsclk_read(const struct cyclecounter *cc)
 	return ptptsclk;
 }
 
+u64 sja1105_ptpclkval_read(struct sja1105_private *priv)
+{
+	const struct sja1105_regs *regs = priv->info->regs;
+	u64 ptpclkval = 0;
+	int rc;
+
+	rc = sja1105_spi_send_int(priv, SPI_READ, regs->ptpclk,
+				  &ptpclkval, 8);
+	if (rc < 0)
+		dev_err_ratelimited(priv->ds->dev,
+				    "failed to read ptp time: %d\n",
+				    rc);
+
+	return ptpclkval;
+}
+EXPORT_SYMBOL_GPL(sja1105_ptpclkval_read);
+
+static inline int sja1105_ptpclkval_write(struct sja1105_private *priv,
+					  u64 val)
+{
+	const struct sja1105_regs *regs = priv->info->regs;
+
+	return sja1105_spi_send_int(priv, SPI_WRITE, regs->ptpclk, &val, 8);
+}
+
 static void sja1105_ptp_overflow_check(struct work_struct *work)
 {
 	struct delayed_work *dw = to_delayed_work(work);
@@ -346,6 +383,93 @@ static void sja1105_ptp_overflow_check(struct work_struct *work)
 
 	schedule_delayed_work(&priv->refresh_work, SJA1105_REFRESH_INTERVAL);
 }
+
+static inline int sja1105_ptp_mode_set(struct sja1105_private *priv,
+				       enum sja1105_ptp_clk_mode mode)
+{
+	struct sja1105_ptp_cmd cmd = {0};
+	int rc;
+
+	if (priv->ptp_mode == mode)
+		return 0;
+
+	cmd.ptpclkadd = mode;
+	rc = priv->info->ptp_cmd(priv, &cmd);
+	if (rc < 0)
+		return rc;
+
+	priv->ptp_mode = mode;
+	return 0;
+}
+
+static int sja1105_phc_gettime(struct ptp_clock_info *ptp,
+			       struct timespec64 *ts)
+{
+	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	u64 ns;
+
+	ns = sja1105_ptpclkval_read(priv) * 8;
+	*ts = ns_to_timespec64(ns);
+
+	return 0;
+}
+
+/* Write to PTPCLKVAL while PTPCLKADD is 0 */
+static int sja1105_phc_settime(struct ptp_clock_info *ptp,
+			       const struct timespec64 *ts)
+{
+	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	u64 ns = timespec64_to_ns(ts) / 8;
+	int rc;
+
+	rc = sja1105_ptp_mode_set(priv, PTP_SET_MODE);
+	if (rc < 0) {
+		dev_err(priv->ds->dev, "Failed to put PTPCLK in set mode\n");
+		return rc;
+	}
+	return sja1105_ptpclkval_write(priv, ns);
+}
+
+static int sja1105_phc_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
+{
+	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	const struct sja1105_regs *regs = priv->info->regs;
+	s64 clkrate;
+
+	clkrate = (s64)scaled_ppm * SJA1105_CC_MULT_NUM;
+	clkrate = div_s64(clkrate, SJA1105_CC_MULT_DEM);
+
+	/* Take a +/- value and re-center it around 2^31. */
+	clkrate = SJA1105_CC_MULT + clkrate;
+	clkrate &= GENMASK_ULL(31, 0);
+
+	return sja1105_spi_send_int(priv, SPI_WRITE, regs->ptpclkrate,
+				    &clkrate, 4);
+}
+
+/* Write to PTPCLKVAL while PTPCLKADD is 1 */
+static int sja1105_phc_adjtime(struct ptp_clock_info *ptp, s64 delta)
+{
+	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	int rc;
+
+	rc = sja1105_ptp_mode_set(priv, PTP_ADD_MODE);
+	if (rc < 0) {
+		dev_err(priv->ds->dev, "Failed to put PTPCLK in add mode\n");
+		return rc;
+	}
+	return sja1105_ptpclkval_write(priv, delta / 8);
+}
+
+static const struct ptp_clock_info sja1105_phc_caps = {
+	.owner		= THIS_MODULE,
+	.name		= "SJA1105 PHC",
+	.adjfine	= sja1105_phc_adjfine,
+	.adjtime	= sja1105_phc_adjtime,
+	.gettime64	= sja1105_phc_gettime,
+	.settime64	= sja1105_phc_settime,
+	.max_adj	= SJA1105_MAX_ADJ_PPB,
+};
 
 static const struct ptp_clock_info sja1105_ptp_caps = {
 	.owner		= THIS_MODULE,
@@ -359,8 +483,6 @@ static const struct ptp_clock_info sja1105_ptp_caps = {
 
 int sja1105_ptp_clock_register(struct sja1105_private *priv)
 {
-	struct dsa_switch *ds = priv->ds;
-
 	/* Set up the cycle counter */
 	priv->tstamp_cc = (struct cyclecounter) {
 		.read = sja1105_ptptsclk_read,
@@ -373,9 +495,10 @@ int sja1105_ptp_clock_register(struct sja1105_private *priv)
 
 	schedule_delayed_work(&priv->refresh_work, SJA1105_REFRESH_INTERVAL);
 
-	priv->ptp_caps = sja1105_ptp_caps;
+	/*priv->ptp_caps = sja1105_ptp_caps;*/
+	priv->ptp_caps = sja1105_phc_caps;
 
-	priv->clock = ptp_clock_register(&priv->ptp_caps, ds->dev);
+	priv->clock = ptp_clock_register(&priv->ptp_caps, priv->ds->dev);
 	if (IS_ERR_OR_NULL(priv->clock))
 		return PTR_ERR(priv->clock);
 
