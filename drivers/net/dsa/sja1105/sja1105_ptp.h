@@ -24,6 +24,8 @@ u64 sja1105_tstamp_reconstruct(struct sja1105_private *priv, u64 now,
 
 int sja1105_ptp_reset(struct sja1105_private *priv, u64 start_ns);
 
+u64 sja1105_ptpclkval_read(struct sja1105_private *priv);
+
 #else
 
 static inline int sja1105_ptp_clock_register(struct sja1105_private *priv)
@@ -49,6 +51,11 @@ static inline u64 sja1105_tstamp_reconstruct(struct sja1105_private *priv,
 }
 
 static inline int sja1105_ptp_reset(struct sja1105_private *priv, u64 start_ns)
+{
+	return 0;
+}
+
+static inline u64 sja1105_ptpclkval_read(struct sja1105_private *priv)
 {
 	return 0;
 }

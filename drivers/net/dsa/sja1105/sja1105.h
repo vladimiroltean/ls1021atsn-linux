@@ -83,6 +83,11 @@ struct sja1105_info {
 	const char *name;
 };
 
+enum sja1105_ptp_clk_mode {
+	PTP_ADD_MODE = 1,
+	PTP_SET_MODE = 0,
+};
+
 struct sja1105_private {
 	struct sja1105_static_config static_config;
 	bool rgmii_rx_delay[SJA1105_NUM_PORTS];
@@ -107,6 +112,8 @@ struct sja1105_private {
 	u64 ptpsyncts;
 	/* Serializes all operations on the cycle counter */
 	struct mutex ptp_lock;
+	enum sja1105_ptp_clk_mode ptp_mode;
+	bool ptp_tstamps_use_corrected_clk;
 	/* Serializes transmission of management frames so that
 	 * the switch doesn't confuse them with one another.
 	 */
