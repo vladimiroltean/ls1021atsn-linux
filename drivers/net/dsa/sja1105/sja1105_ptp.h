@@ -4,6 +4,21 @@
 #ifndef _SJA1105_PTP_H
 #define _SJA1105_PTP_H
 
+/* Timestamps are in units of 8 ns clock ticks (equivalent to
+ * a fixed 125 MHz clock).
+ */
+#define SJA1105_TICK_NS			8
+
+static inline s64 ns_to_sja1105_ticks(s64 ns)
+{
+	return ns / SJA1105_TICK_NS;
+}
+
+static inline s64 sja1105_ticks_to_ns(s64 ticks)
+{
+	return ticks * SJA1105_TICK_NS;
+}
+
 #if IS_ENABLED(CONFIG_NET_DSA_SJA1105_PTP)
 
 int sja1105_ptp_clock_register(struct sja1105_private *priv);
@@ -23,6 +38,9 @@ u64 sja1105_tstamp_reconstruct(struct sja1105_private *priv, u64 now,
 			       u64 ts_partial);
 
 int sja1105_ptp_reset(struct sja1105_private *priv);
+
+u64 sja1105_ptpclkval_read(struct sja1105_private *priv,
+			   struct ptp_system_timestamp *sts);
 
 #else
 
@@ -49,6 +67,12 @@ static inline u64 sja1105_tstamp_reconstruct(struct sja1105_private *priv,
 }
 
 static inline int sja1105_ptp_reset(struct sja1105_private *priv)
+{
+	return 0;
+}
+
+static inline u64 sja1105_ptpclkval_read(struct sja1105_private *priv,
+					 struct ptp_system_timestamp *sts)
 {
 	return 0;
 }

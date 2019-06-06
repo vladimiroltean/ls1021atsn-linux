@@ -1831,7 +1831,7 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 
 	mutex_lock(&priv->ptp_lock);
 
-	now = priv->tstamp_cc.read(&priv->tstamp_cc);
+	now = sja1105_ptpclkval_read(priv, NULL);
 
 	rc = sja1105_ptpegr_ts_poll(priv, slot, &ts);
 	if (rc < 0) {
@@ -1841,9 +1841,8 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 	}
 
 	ts = sja1105_tstamp_reconstruct(priv, now, ts);
-	ts = timecounter_cyc2time(&priv->tstamp_tc, ts);
 
-	shwt.hwtstamp = ns_to_ktime(ts);
+	shwt.hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
 	skb_complete_tx_timestamp(clone, &shwt);
 
 out_unlock_ptp:
@@ -1980,7 +1979,7 @@ static void sja1105_rxtstamp_work(struct work_struct *work)
 
 	mutex_lock(&priv->ptp_lock);
 
-	now = priv->tstamp_cc.read(&priv->tstamp_cc);
+	now = sja1105_ptpclkval_read(priv, NULL);
 
 	while ((skb = skb_dequeue(&data->skb_rxtstamp_queue)) != NULL) {
 		struct skb_shared_hwtstamps *shwt = skb_hwtstamps(skb);
@@ -1990,9 +1989,8 @@ static void sja1105_rxtstamp_work(struct work_struct *work)
 
 		ts = SJA1105_SKB_CB(skb)->meta_tstamp;
 		ts = sja1105_tstamp_reconstruct(priv, now, ts);
-		ts = timecounter_cyc2time(&priv->tstamp_tc, ts);
 
-		shwt->hwtstamp = ns_to_ktime(ts);
+		shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
 		netif_rx_ni(skb);
 	}
 
