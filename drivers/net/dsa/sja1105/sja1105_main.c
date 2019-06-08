@@ -1643,6 +1643,15 @@ static int sja1105_vlan_del(struct dsa_switch *ds, int port,
 				vid, port, rc);
 			return rc;
 		}
+		if (vlan->flags & BRIDGE_VLAN_INFO_PVID) {
+			rc = sja1105_pvid_apply(ds->priv, port, 1);
+			if (rc < 0) {
+				dev_err(ds->dev,
+					"Failed to restore pvid 1 on port %d\n",
+					port);
+				return rc;
+			}
+		}
 	}
 	return 0;
 }
