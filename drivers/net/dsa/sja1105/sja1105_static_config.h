@@ -226,6 +226,9 @@ struct sja1105_l2_lookup_entry {
 };
 
 struct sja1105_l2_lookup_params_entry {
+	u64 drpbc;           /* P/Q/R/S only */
+	u64 drpmc;           /* P/Q/R/S only */
+	u64 drpuni;          /* P/Q/R/S only */
 	u64 maxaddrp[5];     /* P/Q/R/S only */
 	u64 start_dynspc;    /* P/Q/R/S only */
 	u64 drpnolearn;      /* P/Q/R/S only */
@@ -261,6 +264,8 @@ struct sja1105_l2_policing_entry {
 };
 
 struct sja1105_avb_params_entry {
+	u64 l2cbs; /* only on P/Q/R/S */
+	u64 cas_master; /* only on P/Q/R/S */
 	u64 destmeta;
 	u64 srcmeta;
 };
@@ -280,11 +285,18 @@ struct sja1105_mac_config_entry {
 	u64 egr_mirr;
 	u64 drpnona664;
 	u64 drpdtag;
+	u64 drpsotag;   /* only on P/Q/R/S */
+	u64 drpsitag;   /* only on P/Q/R/S */
 	u64 drpuntag;
 	u64 retag;
 	u64 dyn_learn;
 	u64 egress;
 	u64 ingress;
+	u64 mirrcie;    /* only on P/Q/R/S */
+	u64 mirrcetag;  /* only on P/Q/R/S */
+	u64 ingmirrvid; /* only on P/Q/R/S */
+	u64 ingmirrpcp; /* only on P/Q/R/S */
+	u64 ingmirrdei; /* only on P/Q/R/S */
 };
 
 struct sja1105_xmii_params_entry {
