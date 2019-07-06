@@ -858,8 +858,11 @@ static void sja1105_phylink_validate(struct dsa_switch *ds, int port,
 	phylink_set(mask, MII);
 	phylink_set(mask, 10baseT_Full);
 	phylink_set(mask, 100baseT_Full);
-	if (mii->xmii_mode[port] == XMII_MODE_RGMII)
+	phylink_set(mask, 100baseT1_Full);
+	if (mii->xmii_mode[port] == XMII_MODE_RGMII) {
 		phylink_set(mask, 1000baseT_Full);
+		phylink_set(mask, 1000baseT1_Full);
+	}
 
 	bitmap_and(supported, supported, mask, __ETHTOOL_LINK_MODE_MASK_NBITS);
 	bitmap_and(state->advertising, state->advertising, mask,
