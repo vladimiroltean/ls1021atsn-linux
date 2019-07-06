@@ -8,6 +8,7 @@
 #include <linux/ptp_clock_kernel.h>
 #include <linux/timecounter.h>
 #include <linux/dsa/sja1105.h>
+#include <net/pkt_sched.h>
 #include <net/dsa.h>
 #include <linux/mutex.h>
 #include "sja1105_static_config.h"
@@ -111,6 +112,8 @@ struct sja1105_private {
 	 */
 	struct mutex mgmt_lock;
 	struct sja1105_tagger_data tagger_data;
+	struct tc_taprio_qopt_offload *tas_config[SJA1105_NUM_PORTS];
+	struct work_struct tas_config_work;
 };
 
 #include "sja1105_dynamic_config.h"
@@ -126,6 +129,9 @@ typedef enum {
 	SPI_READ = 0,
 	SPI_WRITE = 1,
 } sja1105_spi_rw_mode_t;
+
+/* From sja1105_main.c */
+int sja1105_static_config_reload(struct sja1105_private *priv);
 
 /* From sja1105_spi.c */
 int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
