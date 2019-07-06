@@ -152,6 +152,7 @@ struct dsa_mall_tc_entry {
 	};
 };
 
+struct tc_taprio_qopt_offload;
 
 struct dsa_port {
 	/* A CPU port is physically connected to a master device.
@@ -516,6 +517,8 @@ struct dsa_switch_ops {
 				   bool ingress);
 	void	(*port_mirror_del)(struct dsa_switch *ds, int port,
 				   struct dsa_mall_mirror_tc_entry *mirror);
+	int	(*port_setup_taprio)(struct dsa_switch *ds, int port,
+				     struct tc_taprio_qopt_offload *qopt);
 
 	/*
 	 * Cross-chip operations

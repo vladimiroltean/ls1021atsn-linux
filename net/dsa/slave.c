@@ -987,12 +987,26 @@ static int dsa_slave_setup_tc_block(struct net_device *dev,
 	}
 }
 
+static int dsa_slave_setup_tc_taprio(struct net_device *dev,
+				     struct tc_taprio_qopt_offload *f)
+{
+	struct dsa_port *dp = dsa_slave_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
+
+	if (!ds->ops->port_setup_taprio)
+		return -EOPNOTSUPP;
+
+	return ds->ops->port_setup_taprio(ds, dp->index, f);
+}
+
 static int dsa_slave_setup_tc(struct net_device *dev, enum tc_setup_type type,
 			      void *type_data)
 {
 	switch (type) {
 	case TC_SETUP_BLOCK:
 		return dsa_slave_setup_tc_block(dev, type_data);
+	case TC_SETUP_QDISC_TAPRIO:
+		return dsa_slave_setup_tc_taprio(dev, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}
