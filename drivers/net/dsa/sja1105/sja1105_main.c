@@ -504,8 +504,7 @@ static int sja1105_init_l2_policing(struct sja1105_private *priv)
 	return 0;
 }
 
-static int sja1105_init_avb_params(struct sja1105_private *priv,
-				   bool on)
+static int sja1105_init_avb_params(struct sja1105_private *priv)
 {
 	struct sja1105_avb_params_entry *avb;
 	struct sja1105_table *table;
@@ -517,10 +516,6 @@ static int sja1105_init_avb_params(struct sja1105_private *priv,
 		kfree(table->entries);
 		table->entry_count = 0;
 	}
-
-	/* Configure the reception of meta frames only if requested */
-	if (!on)
-		return 0;
 
 	table->entries = kcalloc(SJA1105_MAX_AVB_PARAMS_COUNT,
 				 table->ops->unpacked_entry_size, GFP_KERNEL);
@@ -577,7 +572,7 @@ static int sja1105_static_config_load(struct sja1105_private *priv,
 	rc = sja1105_init_general_params(priv);
 	if (rc < 0)
 		return rc;
-	rc = sja1105_init_avb_params(priv, false);
+	rc = sja1105_init_avb_params(priv);
 	if (rc < 0)
 		return rc;
 
@@ -1885,16 +1880,11 @@ static int sja1105_change_rxtstamping(struct sja1105_private *priv,
 {
 	struct sja1105_general_params_entry *general_params;
 	struct sja1105_table *table;
-	int rc;
 
 	table = &priv->static_config.tables[BLK_IDX_GENERAL_PARAMS];
 	general_params = table->entries;
 	general_params->send_meta1 = on;
 	general_params->send_meta0 = on;
-
-	rc = sja1105_init_avb_params(priv, on);
-	if (rc < 0)
-		return rc;
 
 	/* Initialize the meta state machine to a known state */
 	if (priv->tagger_data.stampable_skb) {
