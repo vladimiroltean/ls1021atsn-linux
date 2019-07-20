@@ -87,15 +87,38 @@ tests_run()
 ##############################################################################
 # Tests
 
+check_with_tolerance()
+{
+	local res=$1
+	local expected=$2
+	local ppb=$3
+	local expected_min=$(($expected - (($expected * $ppb) / 1000000000)))
+	local expected_max=$(($expected + (($expected * $ppb) / 1000000000)))
+
+	if [ $res -lt $expected_min ]; then
+		printf "%d is more than %d ppb lower than expected %d (%d)\n" \
+			$res $ppb $expected $expected_min
+		return 1
+	elif [ $res -gt $expected_max ]; then
+		printf "%d is more than %d ppb higher than expected %d (%d)\n" \
+			$res $ppb $expected $expected_max
+		return 1;
+	else
+		printf "%d is within the +/-%d ppb tolerance of %d (%d - %d)\n" \
+			$res $ppb $expected $expected_min $expected_max
+		return 0;
+	fi
+}
+
 settime_do()
 {
 	local res
 
-	res=$(phc_ctl $DEV set 0 wait 120.5 get 2> /dev/null \
+	res=$(phc_ctl $DEV set 0 wait 120 get 2> /dev/null \
 		| awk '/clock time is/{print $5}' \
-		| awk -F. '{print $1}')
+		| awk -F. '{print $1 * 1000000000 + $2}')
 
-	(( res == 120 ))
+	check_with_tolerance $res 120000000000 10000
 }
 
 adjtime_do()
@@ -104,9 +127,9 @@ adjtime_do()
 
 	res=$(phc_ctl $DEV set 0 adj 10 get 2> /dev/null \
 		| awk '/clock time is/{print $5}' \
-		| awk -F. '{print $1}')
+		| awk -F. '{print $1 * 1000000000 + $2}')
 
-	(( res == 10 ))
+	check_with_tolerance $res 10000000000 10000
 }
 
 adjfreq_do()
@@ -114,11 +137,11 @@ adjfreq_do()
 	local res
 
 	# Set the clock to be 1% faster
-	res=$(phc_ctl $DEV freq 10000000 set 0 wait 100.5 get 2> /dev/null \
+	res=$(phc_ctl $DEV freq 10000000 set 0 wait 100 get 2> /dev/null \
 		| awk '/clock time is/{print $5}' \
-		| awk -F. '{print $1}')
+		| awk -F. '{print $1 * 1000000000 + $2}')
 
-	(( res == 101 ))
+	check_with_tolerance $res 101000000000 10000
 }
 
 ##############################################################################
