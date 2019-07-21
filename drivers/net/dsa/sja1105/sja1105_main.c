@@ -526,6 +526,10 @@ static int sja1105_init_avb_params(struct sja1105_private *priv)
 
 	avb = table->entries;
 
+	/* PTP_CLK direction is only configurable on P/Q/R/S. Keep the default
+	 * behavior common for both switch families.
+	 */
+	avb->cas_master = true;
 	avb->destmeta = SJA1105_META_DMAC;
 	avb->srcmeta  = SJA1105_META_SMAC;
 
@@ -1376,7 +1380,7 @@ static void sja1105_bridge_leave(struct dsa_switch *ds, int port,
  * modify at runtime (currently only MAC) and restore them after uploading,
  * such that this operation is relatively seamless.
  */
-static int sja1105_static_config_reload(struct sja1105_private *priv)
+int sja1105_static_config_reload(struct sja1105_private *priv)
 {
 	struct sja1105_mac_config_entry *mac;
 	int speed_mbps[SJA1105_NUM_PORTS];

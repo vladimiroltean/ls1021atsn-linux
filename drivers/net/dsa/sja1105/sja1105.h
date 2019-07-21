@@ -29,10 +29,13 @@ struct sja1105_regs {
 	u64 rgu;
 	u64 config;
 	u64 rmii_pll1;
+	u64 ptppinst;
+	u64 ptppindur;
 	u64 ptp_control;
 	u64 ptpclk;
 	u64 ptpclkrate;
 	u64 ptptsclk;
+	u64 ptpsyncts;
 	u64 ptpegr_ts[SJA1105_NUM_PORTS];
 	u64 pad_mii_tx[SJA1105_NUM_PORTS];
 	u64 pad_mii_id[SJA1105_NUM_PORTS];
@@ -97,6 +100,10 @@ struct sja1105_private {
 	struct cyclecounter tstamp_cc;
 	struct timecounter tstamp_tc;
 	struct delayed_work refresh_work;
+	struct delayed_work extts_work;
+	bool extts_enabled;
+	bool pps_enabled;
+	u64 ptpsyncts;
 	/* Serializes all operations on the cycle counter */
 	struct mutex ptp_lock;
 	/* Serializes transmission of management frames so that
@@ -119,6 +126,9 @@ typedef enum {
 	SPI_READ = 0,
 	SPI_WRITE = 1,
 } sja1105_spi_rw_mode_t;
+
+/* From sja1105_main.c */
+int sja1105_static_config_reload(struct sja1105_private *priv);
 
 /* From sja1105_spi.c */
 int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
