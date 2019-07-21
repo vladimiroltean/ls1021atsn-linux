@@ -29,10 +29,13 @@ struct sja1105_regs {
 	u64 rgu;
 	u64 config;
 	u64 rmii_pll1;
+	u64 ptppinst;
+	u64 ptppindur;
 	u64 ptp_control;
 	u64 ptpclk;
 	u64 ptpclkrate;
 	u64 ptptsclk;
+	u64 ptpsyncts;
 	u64 ptpegr_ts[SJA1105_NUM_PORTS];
 	u64 pad_mii_tx[SJA1105_NUM_PORTS];
 	u64 pad_mii_id[SJA1105_NUM_PORTS];
@@ -56,6 +59,8 @@ enum sja1105_ptp_clk_mode {
 };
 
 struct sja1105_ptp_cmd {
+	u64 startptpcp;		/* start toggling PTP_CLK pin */
+	u64 stopptpcp;		/* stop toggling PTP_CLK pin */
 	u64 resptp;		/* reset */
 	u64 corrclk4ts;		/* use the corrected clock for timestamps */
 	u64 ptpclkadd;		/* enum sja1105_ptp_clk_mode */
@@ -104,6 +109,9 @@ struct sja1105_private {
 	struct ptp_system_timestamp *ptp_sts;
 	struct ptp_clock_info ptp_caps;
 	struct ptp_clock *clock;
+	struct delayed_work extts_work;
+	bool extts_input;
+	u64 ptpsyncts;
 	/* Serializes all operations on the PTP hardware clock */
 	struct mutex ptp_lock;
 	/* Serializes transmission of management frames so that

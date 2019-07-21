@@ -526,6 +526,14 @@ static int sja1105_init_avb_params(struct sja1105_private *priv)
 
 	avb = table->entries;
 
+	/* Configure the direction of the PTP_CLK pin.
+	 * This setting only exists on P/Q/R/S - on E/T the pin
+	 * is always an output.
+	 */
+	if (priv->extts_input)
+		avb->cas_master = false;
+	else
+		avb->cas_master = true;
 	avb->destmeta = SJA1105_META_DMAC;
 	avb->srcmeta  = SJA1105_META_SMAC;
 
@@ -679,6 +687,14 @@ static int sja1105_parse_dt(struct sja1105_private *priv,
 
 	rc = sja1105_parse_ports_node(priv, ports, ports_node);
 	of_node_put(ports_node);
+
+	if (of_property_read_bool(switch_node, "sja1105,extts-input")) {
+		if (priv->info->device_id == SJA1105E_DEVICE_ID ||
+		    priv->info->device_id == SJA1105T_DEVICE_ID)
+			return -EINVAL;
+
+		priv->extts_input = true;
+	}
 
 	return rc;
 }
