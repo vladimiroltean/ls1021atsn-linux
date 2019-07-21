@@ -22,7 +22,7 @@ int sja1105_get_ts_info(struct dsa_switch *ds, int port,
 u64 sja1105_tstamp_reconstruct(struct sja1105_private *priv, u64 now,
 			       u64 ts_partial);
 
-int sja1105_ptp_reset(struct sja1105_private *priv);
+int sja1105_ptp_reset(struct sja1105_private *priv, u64 start_ns);
 
 #else
 
@@ -48,7 +48,7 @@ static inline u64 sja1105_tstamp_reconstruct(struct sja1105_private *priv,
 	return 0;
 }
 
-static inline int sja1105_ptp_reset(struct sja1105_private *priv)
+static inline int sja1105_ptp_reset(struct sja1105_private *priv, u64 start_ns)
 {
 	return 0;
 }

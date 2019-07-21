@@ -244,7 +244,7 @@ int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, u64 *ts)
 	return 0;
 }
 
-int sja1105_ptp_reset(struct sja1105_private *priv)
+int sja1105_ptp_reset(struct sja1105_private *priv, u64 start_ns)
 {
 	struct dsa_switch *ds = priv->ds;
 	struct sja1105_ptp_cmd cmd = {0};
@@ -254,8 +254,7 @@ int sja1105_ptp_reset(struct sja1105_private *priv)
 	dev_dbg(ds->dev, "Resetting PTP clock\n");
 	rc = priv->info->ptp_cmd(priv, &cmd);
 
-	timecounter_init(&priv->tstamp_tc, &priv->tstamp_cc,
-			 ktime_to_ns(ktime_get_real()));
+	timecounter_init(&priv->tstamp_tc, &priv->tstamp_cc, start_ns);
 
 	return rc;
 }
@@ -558,7 +557,7 @@ int sja1105_ptp_clock_register(struct sja1105_private *priv)
 
 	mutex_lock(&priv->ptp_lock);
 
-	rc = sja1105_ptp_reset(priv);
+	rc = sja1105_ptp_reset(priv, 0);
 
 	mutex_unlock(&priv->ptp_lock);
 

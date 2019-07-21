@@ -398,6 +398,7 @@ int sja1105_static_config_upload(struct sja1105_private *priv)
 	struct device *dev = &priv->spidev->dev;
 	struct sja1105_status status;
 	int rc, retries = RETRIES;
+	u64 phc_start_ns, ktime_start_ns, diff_ns;
 	u8 *config_buf;
 	int buf_len;
 
@@ -427,6 +428,9 @@ int sja1105_static_config_upload(struct sja1105_private *priv)
 	usleep_range(500, 1000);
 
 	mutex_lock(&priv->ptp_lock);
+
+	phc_start_ns = timecounter_read(&priv->tstamp_tc);
+	ktime_start_ns = ktime_to_ns(ktime_get());
 
 	do {
 		/* Put the SJA1105 in programming mode */
@@ -483,7 +487,9 @@ int sja1105_static_config_upload(struct sja1105_private *priv)
 		dev_info(dev, "Succeeded after %d tried\n", RETRIES - retries);
 	}
 
-	rc = sja1105_ptp_reset(priv);
+	diff_ns = ktime_to_ns(ktime_get()) - ktime_start_ns;
+
+	rc = sja1105_ptp_reset(priv, phc_start_ns + diff_ns);
 	if (rc < 0)
 		dev_err(dev, "Failed to reset PTP clock: %d\n", rc);
 
