@@ -37,9 +37,12 @@ struct sja1105_regs {
 	u64 rgu;
 	u64 config;
 	u64 rmii_pll1;
+	u64 ptppinst;
+	u64 ptppindur;
 	u64 ptp_control;
 	u64 ptpclk;
 	u64 ptpclkrate;
+	u64 ptpsyncts;
 	u64 ptpclkcorp;
 	u64 ptpschtm;
 	u64 ptpegr_ts[SJA1105_NUM_PORTS];
@@ -94,6 +97,7 @@ struct sja1105_private {
 	struct sja1105_static_config static_config;
 	bool rgmii_rx_delay[SJA1105_NUM_PORTS];
 	bool rgmii_tx_delay[SJA1105_NUM_PORTS];
+	bool extts_input;
 	const struct sja1105_info *info;
 	struct gpio_desc *reset_gpio;
 	struct spi_device *spidev;

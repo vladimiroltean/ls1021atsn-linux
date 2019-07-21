@@ -29,6 +29,8 @@ enum sja1105_ptp_clk_mode {
 };
 
 struct sja1105_ptp_cmd {
+	u64 startptpcp;		/* start toggling PTP_CLK pin */
+	u64 stopptpcp;		/* stop toggling PTP_CLK pin */
 	u64 ptpstrtsch;		/* start schedule */
 	u64 ptpstopsch;		/* stop schedule */
 	u64 resptp;		/* reset */
@@ -37,11 +39,13 @@ struct sja1105_ptp_cmd {
 };
 
 struct sja1105_ptp_data {
+	struct delayed_work extts_work;
 	struct sja1105_ptp_cmd cmd;
 	struct ptp_clock_info caps;
 	struct ptp_clock *clock;
 	/* Serializes all operations on the PTP hardware clock */
 	struct mutex lock;
+	u64 ptpsyncts;
 };
 
 int sja1105_ptp_clock_register(struct sja1105_private *priv);

@@ -14,6 +14,17 @@
 #define SJA1105_MAX_ADJ_PPB		32000000
 #define SJA1105_SIZE_PTP_CMD		4
 
+/* PTPSYNCTS has no interrupt or update mechanism, because the intended
+ * hardware use case is for the timestamp to be collected synchronously,
+ * immediately after the CAS_MASTER SJA1105 switch has triggered a CASSYNC
+ * pulse on the PTP_CLK pin. When used as a generic extts source, it needs
+ * polling and a comparison with the old value. The polling interval is just
+ * the Nyquist rate of a canonical PPS input (e.g. from a GPS module).
+ * Anything of higher frequency than 1 Hz will be lost, since there is no
+ * timestamp FIFO.
+ */
+#define SJA1105_EXTTS_INTERVAL		(HZ / 2)
+
 /*            This range is actually +/- SJA1105_MAX_ADJ_PPB
  *            divided by 1000 (ppb -> ppm) and with a 16-bit
  *            "fractional" part (actually fixed point).
@@ -34,6 +45,17 @@
 #define SJA1105_CC_MULT_DEM		15625
 #define SJA1105_CC_MULT			0x80000000
 
+/* The PTP_CLK pin may be configured to toggle with a 50% duty cycle and a
+ * frequency f:
+ *
+ *           NSEC_PER_SEC
+ * f = ----------------------
+ *     (PTPPINDUR * 8 ns) * 2
+ */
+#define SJA1105_HZ_TO_PIN_DURATION(hz) (NSEC_PER_SEC / (16 * hz))
+
+#define extts_to_sja1105_data(d) \
+		container_of((d), struct sja1105_ptp_data, extts_work)
 #define ptp_to_sja1105_data(d) \
 		container_of((d), struct sja1105_ptp_data, caps)
 #define ptp_data_to_sja1105(d) \
@@ -69,6 +91,8 @@ void sja1105et_ptp_cmd_packing(u8 *buf, struct sja1105_ptp_cmd *cmd,
 	sja1105_packing(buf, &valid,           31, 31, size, op);
 	sja1105_packing(buf, &cmd->ptpstrtsch, 30, 30, size, op);
 	sja1105_packing(buf, &cmd->ptpstopsch, 29, 29, size, op);
+	sja1105_packing(buf, &cmd->startptpcp, 28, 28, size, op);
+	sja1105_packing(buf, &cmd->stopptpcp,  27, 27, size, op);
 	sja1105_packing(buf, &cmd->resptp,      2,  2, size, op);
 	sja1105_packing(buf, &cmd->corrclk4ts,  1,  1, size, op);
 	sja1105_packing(buf, &cmd->ptpclkadd,   0,  0, size, op);
@@ -84,6 +108,8 @@ void sja1105pqrs_ptp_cmd_packing(u8 *buf, struct sja1105_ptp_cmd *cmd,
 	sja1105_packing(buf, &valid,           31, 31, size, op);
 	sja1105_packing(buf, &cmd->ptpstrtsch, 30, 30, size, op);
 	sja1105_packing(buf, &cmd->ptpstopsch, 29, 29, size, op);
+	sja1105_packing(buf, &cmd->startptpcp, 28, 28, size, op);
+	sja1105_packing(buf, &cmd->stopptpcp,  27, 27, size, op);
 	sja1105_packing(buf, &cmd->resptp,      3,  3, size, op);
 	sja1105_packing(buf, &cmd->corrclk4ts,  2,  2, size, op);
 	sja1105_packing(buf, &cmd->ptpclkadd,   0,  0, size, op);
@@ -400,6 +426,139 @@ static int sja1105_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	return rc;
 }
 
+static void sja1105_ptp_extts_work(struct work_struct *work)
+{
+	struct delayed_work *dw = to_delayed_work(work);
+	struct sja1105_ptp_data *ptp_data = extts_to_sja1105_data(dw);
+	struct sja1105_private *priv = ptp_data_to_sja1105(ptp_data);
+	const struct sja1105_regs *regs = priv->info->regs;
+	struct ptp_clock_event event;
+	u64 ptpsyncts = 0;
+	int rc;
+
+	mutex_lock(&ptp_data->lock);
+
+	rc = sja1105_spi_send_u64(priv, SPI_READ, regs->ptpsyncts,
+				  &ptpsyncts, NULL);
+	if (rc < 0)
+		dev_err_ratelimited(priv->ds->dev,
+				    "Failed to read PTPSYNCTS: %d\n", rc);
+
+	if (ptpsyncts && ptp_data->ptpsyncts != ptpsyncts) {
+		event.index = 0;
+		event.type = PTP_CLOCK_EXTTS;
+		event.timestamp = ns_to_ktime(sja1105_ticks_to_ns(ptpsyncts));
+		ptp_clock_event(ptp_data->clock, &event);
+
+		ptp_data->ptpsyncts = ptpsyncts;
+	}
+
+	mutex_unlock(&ptp_data->lock);
+
+	schedule_delayed_work(&ptp_data->extts_work, SJA1105_EXTTS_INTERVAL);
+}
+
+static int sja1105_per_out_enable(struct sja1105_private *priv,
+				  struct ptp_perout_request *perout,
+				  bool on)
+{
+	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
+	const struct sja1105_regs *regs = priv->info->regs;
+	struct sja1105_ptp_cmd *cmd = &ptp_data->cmd;
+	int rc;
+
+	if (priv->extts_input)
+		return -EOPNOTSUPP;
+
+	mutex_lock(&ptp_data->lock);
+
+	if (on) {
+		struct timespec64 pin_duration_ts = {
+			.tv_sec = perout->period.sec,
+			.tv_nsec = perout->period.nsec,
+		};
+		struct timespec64 pin_start_ts = {
+			.tv_sec = perout->start.sec,
+			.tv_nsec = perout->start.nsec,
+		};
+		u32 pin_duration = timespec64_to_ns(&pin_duration_ts);
+		u64 pin_start = timespec64_to_ns(&pin_start_ts);
+
+		pin_duration = ns_to_sja1105_ticks(pin_duration);
+		pin_start = ns_to_sja1105_ticks(pin_start);
+
+		rc = sja1105_spi_send_u64(priv, SPI_WRITE, regs->ptppinst,
+					  &pin_start, NULL);
+		if (rc < 0)
+			goto out;
+
+		rc = sja1105_spi_send_u32(priv, SPI_WRITE, regs->ptppindur,
+					  &pin_duration, NULL);
+		if (rc < 0)
+			goto out;
+	}
+
+	if (on)
+		cmd->startptpcp = true;
+	else
+		cmd->stopptpcp = true;
+
+	rc = sja1105_ptp_commit(priv, cmd, SPI_WRITE);
+
+out:
+	mutex_unlock(&ptp_data->lock);
+
+	return rc;
+}
+
+static int sja1105_extts_enable(struct sja1105_private *priv,
+				struct ptp_extts_request *extts,
+				bool on)
+{
+	if (!priv->extts_input)
+		return -EOPNOTSUPP;
+
+	if (extts->index != 0)
+		return -ENOTSUPP;
+
+	if (on)
+		schedule_delayed_work(&priv->ptp_data.extts_work,
+				      SJA1105_EXTTS_INTERVAL);
+	else
+		cancel_delayed_work_sync(&priv->ptp_data.extts_work);
+
+	return 0;
+}
+
+static int sja1105_ptp_enable(struct ptp_clock_info *ptp,
+			      struct ptp_clock_request *req, int on)
+{
+	struct sja1105_ptp_data *ptp_data = ptp_to_sja1105_data(ptp);
+	struct sja1105_private *priv = ptp_data_to_sja1105(ptp_data);
+	int rc = -EOPNOTSUPP;
+
+	if (req->type == PTP_CLK_REQ_PEROUT)
+		rc = sja1105_per_out_enable(priv, &req->perout, on);
+	else if (req->type == PTP_CLK_REQ_EXTTS)
+		rc = sja1105_extts_enable(priv, &req->extts, on);
+
+	return rc;
+}
+
+static int sja1105_ptp_verify_pin(struct ptp_clock_info *ptp, unsigned int pin,
+				  enum ptp_pin_function func, unsigned int chan)
+{
+	switch (func) {
+	case PTP_PF_NONE:
+	case PTP_PF_EXTTS:
+	case PTP_PF_PEROUT:
+		break;
+	case PTP_PF_PHYSYNC:
+		return -1;
+	}
+	return 0;
+}
+
 int sja1105_ptp_clock_register(struct sja1105_private *priv)
 {
 	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
@@ -412,14 +571,23 @@ int sja1105_ptp_clock_register(struct sja1105_private *priv)
 		.adjtime	= sja1105_ptp_adjtime,
 		.gettimex64	= sja1105_ptp_gettimex,
 		.settime64	= sja1105_ptp_settime,
+		.enable		= sja1105_ptp_enable,
+		.verify		= sja1105_ptp_verify_pin,
 		.max_adj	= SJA1105_MAX_ADJ_PPB,
 	};
+
+	if (priv->extts_input)
+		ptp_data->caps.n_ext_ts = 1;
+	else
+		ptp_data->caps.n_per_out = 1;
 
 	mutex_init(&ptp_data->lock);
 
 	ptp_data->clock = ptp_clock_register(&ptp_data->caps, ds->dev);
 	if (IS_ERR_OR_NULL(ptp_data->clock))
 		return PTR_ERR(ptp_data->clock);
+
+	INIT_DELAYED_WORK(&ptp_data->extts_work, sja1105_ptp_extts_work);
 
 	ptp_data->cmd.corrclk4ts = true;
 	ptp_data->cmd.ptpclkadd = PTP_SET_MODE;
@@ -434,6 +602,7 @@ void sja1105_ptp_clock_unregister(struct sja1105_private *priv)
 	if (IS_ERR_OR_NULL(ptp_data->clock))
 		return;
 
+	cancel_delayed_work_sync(&ptp_data->extts_work);
 	ptp_clock_unregister(ptp_data->clock);
 	ptp_data->clock = NULL;
 }
