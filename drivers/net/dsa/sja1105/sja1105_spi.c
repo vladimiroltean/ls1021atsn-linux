@@ -425,6 +425,9 @@ int sja1105_static_config_upload(struct sja1105_private *priv)
 	 * follow, and that switch cold reset is thus safe
 	 */
 	usleep_range(500, 1000);
+
+	mutex_lock(&priv->ptp_lock);
+
 	do {
 		/* Put the SJA1105 in programming mode */
 		rc = sja1105_cold_reset(priv);
@@ -487,6 +490,7 @@ int sja1105_static_config_upload(struct sja1105_private *priv)
 	dev_info(dev, "Reset switch and programmed static config\n");
 
 out:
+	mutex_unlock(&priv->ptp_lock);
 	kfree(config_buf);
 	return rc;
 }

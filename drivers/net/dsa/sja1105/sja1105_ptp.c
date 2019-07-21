@@ -250,16 +250,12 @@ int sja1105_ptp_reset(struct sja1105_private *priv)
 	struct sja1105_ptp_cmd cmd = {0};
 	int rc;
 
-	mutex_lock(&priv->ptp_lock);
-
 	cmd.resptp = 1;
 	dev_dbg(ds->dev, "Resetting PTP clock\n");
 	rc = priv->info->ptp_cmd(priv, &cmd);
 
 	timecounter_init(&priv->tstamp_tc, &priv->tstamp_cc,
 			 ktime_to_ns(ktime_get_real()));
-
-	mutex_unlock(&priv->ptp_lock);
 
 	return rc;
 }
@@ -540,6 +536,7 @@ static const struct ptp_clock_info sja1105_ptp_caps = {
 int sja1105_ptp_clock_register(struct sja1105_private *priv)
 {
 	struct dsa_switch *ds = priv->ds;
+	int rc;
 
 	/* Set up the cycle counter */
 	priv->tstamp_cc = (struct cyclecounter) {
@@ -559,7 +556,13 @@ int sja1105_ptp_clock_register(struct sja1105_private *priv)
 	INIT_DELAYED_WORK(&priv->extts_work, sja1105_ptp_extts_work);
 	schedule_delayed_work(&priv->refresh_work, SJA1105_REFRESH_INTERVAL);
 
-	return sja1105_ptp_reset(priv);
+	mutex_lock(&priv->ptp_lock);
+
+	rc = sja1105_ptp_reset(priv);
+
+	mutex_unlock(&priv->ptp_lock);
+
+	return rc;
 }
 
 void sja1105_ptp_clock_unregister(struct sja1105_private *priv)
