@@ -389,6 +389,8 @@ u64 sja1105_ptpclkval_read(struct sja1105_private *priv)
 				    "failed to read ptp time: %d\n",
 				    rc);
 
+	ptpclkval -= sja1105_spi_delay(priv, 8) / 8;
+
 	return ptpclkval;
 }
 EXPORT_SYMBOL_GPL(sja1105_ptpclkval_read);
@@ -397,6 +399,8 @@ static inline int sja1105_ptpclkval_write(struct sja1105_private *priv,
 					  u64 val)
 {
 	const struct sja1105_regs *regs = priv->info->regs;
+
+	val -= sja1105_spi_delay(priv, 8) / 8;
 
 	return sja1105_spi_send_int(priv, SPI_WRITE, regs->ptpclk, &val, 8);
 }

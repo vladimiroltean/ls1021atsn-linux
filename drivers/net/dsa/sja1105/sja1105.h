@@ -152,6 +152,7 @@ int sja1105_spi_send_long_packed_buf(const struct sja1105_private *priv,
 int sja1105_static_config_upload(struct sja1105_private *priv);
 int sja1105_inhibit_tx(const struct sja1105_private *priv,
 		       unsigned long port_bitmap, bool tx_inhibited);
+u64 sja1105_spi_delay(struct sja1105_private *priv, int buf_len);
 
 extern struct sja1105_info sja1105e_info;
 extern struct sja1105_info sja1105t_info;

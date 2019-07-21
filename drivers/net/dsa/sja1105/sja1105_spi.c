@@ -14,6 +14,14 @@
 #define SJA1105_SIZE_SPI_TRANSFER_MAX	\
 	(SJA1105_SIZE_SPI_MSG_HEADER + SJA1105_SIZE_SPI_MSG_MAXLEN)
 
+u64 sja1105_spi_delay(struct sja1105_private *priv, int buf_len)
+{
+	u64 bit_time = NSEC_PER_SEC / priv->spidev->max_speed_hz;
+
+	/* Account for the protocol overhead */
+	return (bit_time * 8) * (buf_len + SJA1105_SIZE_SPI_MSG_HEADER);
+}
+
 static int sja1105_spi_transfer(const struct sja1105_private *priv,
 				const void *tx, void *rx, int size)
 {
