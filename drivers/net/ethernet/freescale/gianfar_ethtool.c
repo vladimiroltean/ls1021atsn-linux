@@ -35,7 +35,7 @@
 #include <asm/types.h>
 #include <linux/ethtool.h>
 #include <linux/mii.h>
-#include <linux/phy.h>
+#include <linux/phylink.h>
 #include <linux/sort.h>
 #include <linux/if_vlan.h>
 #include <linux/of_platform.h>
@@ -207,12 +207,10 @@ static void gfar_get_regs(struct net_device *dev, struct ethtool_regs *regs,
 static unsigned int gfar_usecs2ticks(struct gfar_private *priv,
 				     unsigned int usecs)
 {
-	struct net_device *ndev = priv->ndev;
-	struct phy_device *phydev = ndev->phydev;
 	unsigned int count;
 
 	/* The timer is different, depending on the interface speed */
-	switch (phydev->speed) {
+	switch (priv->speed) {
 	case SPEED_1000:
 		count = GFAR_GBIT_TIME;
 		break;
@@ -234,12 +232,10 @@ static unsigned int gfar_usecs2ticks(struct gfar_private *priv,
 static unsigned int gfar_ticks2usecs(struct gfar_private *priv,
 				     unsigned int ticks)
 {
-	struct net_device *ndev = priv->ndev;
-	struct phy_device *phydev = ndev->phydev;
 	unsigned int count;
 
 	/* The timer is different, depending on the interface speed */
-	switch (phydev->speed) {
+	switch (priv->speed) {
 	case SPEED_1000:
 		count = GFAR_GBIT_TIME;
 		break;
@@ -489,58 +485,15 @@ static void gfar_gpauseparam(struct net_device *dev,
 {
 	struct gfar_private *priv = netdev_priv(dev);
 
-	epause->autoneg = !!priv->pause_aneg_en;
-	epause->rx_pause = !!priv->rx_pause_en;
-	epause->tx_pause = !!priv->tx_pause_en;
+	phylink_ethtool_get_pauseparam(priv->phylink, epause);
 }
 
 static int gfar_spauseparam(struct net_device *dev,
 			    struct ethtool_pauseparam *epause)
 {
 	struct gfar_private *priv = netdev_priv(dev);
-	struct phy_device *phydev = dev->phydev;
-	struct gfar __iomem *regs = priv->gfargrp[0].regs;
 
-	if (!phydev)
-		return -ENODEV;
-
-	if (!phy_validate_pause(phydev, epause))
-		return -EINVAL;
-
-	priv->rx_pause_en = priv->tx_pause_en = 0;
-	phy_set_asym_pause(phydev, epause->rx_pause, epause->tx_pause);
-	if (epause->rx_pause) {
-		priv->rx_pause_en = 1;
-
-		if (epause->tx_pause) {
-			priv->tx_pause_en = 1;
-		}
-	} else if (epause->tx_pause) {
-		priv->tx_pause_en = 1;
-	}
-
-	if (epause->autoneg)
-		priv->pause_aneg_en = 1;
-	else
-		priv->pause_aneg_en = 0;
-
-	if (!epause->autoneg) {
-		u32 tempval = gfar_read(&regs->maccfg1);
-
-		tempval &= ~(MACCFG1_TX_FLOW | MACCFG1_RX_FLOW);
-
-		priv->tx_actual_en = 0;
-		if (priv->tx_pause_en) {
-			priv->tx_actual_en = 1;
-			tempval |= MACCFG1_TX_FLOW;
-		}
-
-		if (priv->rx_pause_en)
-			tempval |= MACCFG1_RX_FLOW;
-		gfar_write(&regs->maccfg1, tempval);
-	}
-
-	return 0;
+	return phylink_ethtool_set_pauseparam(priv->phylink, epause);
 }
 
 int gfar_set_features(struct net_device *dev, netdev_features_t features)
@@ -1519,6 +1472,24 @@ static int gfar_get_ts_info(struct net_device *dev,
 	return 0;
 }
 
+/* Set link ksettings (phy address, speed) for ethtools */
+static int gfar_get_link_ksettings(struct net_device *dev,
+				   struct ethtool_link_ksettings *cmd)
+{
+	struct gfar_private *priv = netdev_priv(dev);
+
+	return phylink_ethtool_ksettings_get(priv->phylink, cmd);
+}
+
+/* Get link ksettings for ethtools */
+static int gfar_set_link_ksettings(struct net_device *dev,
+				   const struct ethtool_link_ksettings *cmd)
+{
+	struct gfar_private *priv = netdev_priv(dev);
+
+	return phylink_ethtool_ksettings_set(priv->phylink, cmd);
+}
+
 const struct ethtool_ops gfar_ethtool_ops = {
 	.get_drvinfo = gfar_gdrvinfo,
 	.get_regs_len = gfar_reglen,
@@ -1542,6 +1513,6 @@ const struct ethtool_ops gfar_ethtool_ops = {
 	.set_rxnfc = gfar_set_nfc,
 	.get_rxnfc = gfar_get_nfc,
 	.get_ts_info = gfar_get_ts_info,
-	.get_link_ksettings = phy_ethtool_get_link_ksettings,
-	.set_link_ksettings = phy_ethtool_set_link_ksettings,
+	.get_link_ksettings = gfar_get_link_ksettings,
+	.set_link_ksettings = gfar_set_link_ksettings,
 };

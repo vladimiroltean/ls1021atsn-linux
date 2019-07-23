@@ -31,8 +31,7 @@
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
 #include <linux/mm.h>
-#include <linux/mii.h>
-#include <linux/phy.h>
+#include <linux/phylink.h>
 
 #include <asm/io.h>
 #include <asm/irq.h>
@@ -149,7 +148,12 @@ extern const char gfar_driver_version[];
 #define GFAR_SUPPORTED_GBIT SUPPORTED_1000baseT_Full
 
 /* TBI register addresses */
+#define MII_TBI_CR		0x00
 #define MII_TBICON		0x11
+
+/* TBI_CR register bit fields */
+#define TBI_CR_FULL_DUPLEX	0x0100
+#define TBI_CR_SPEED_1000_MASK	0x0040
 
 /* TBICON register bit fields */
 #define TBICON_CLK_SELECT	0x0020
@@ -1148,12 +1152,12 @@ struct gfar_private {
 
 	/* PHY stuff */
 	phy_interface_t interface;
-	struct device_node *phy_node;
+	struct device_node *device_node;
 	struct device_node *tbi_node;
-	struct mii_bus *mii_bus;
-	int oldspeed;
-	int oldduplex;
-	int oldlink;
+	struct phylink *phylink;
+	struct phylink_config phylink_config;
+	struct phy_device *tbi_phy;
+	int speed;
 
 	uint32_t msg_enable;
 
@@ -1165,11 +1169,7 @@ struct gfar_private {
 		bd_stash_en:1,
 		rx_filer_enable:1,
 		/* Enable priorty based Tx scheduling in Hw */
-		prio_sched_en:1,
-		/* Flow control flags */
-		pause_aneg_en:1,
-		tx_pause_en:1,
-		rx_pause_en:1;
+		prio_sched_en:1;
 
 	/* The total tx and rx ring size for the enabled queues */
 	unsigned int total_tx_ring_size;
@@ -1333,8 +1333,6 @@ void reset_gfar(struct net_device *dev);
 void gfar_mac_reset(struct gfar_private *priv);
 void gfar_halt(struct gfar_private *priv);
 void gfar_start(struct gfar_private *priv);
-void gfar_phy_test(struct mii_bus *bus, struct phy_device *phydev, int enable,
-		   u32 regnum, u32 read);
 void gfar_configure_coalescing_all(struct gfar_private *priv);
 int gfar_set_features(struct net_device *dev, netdev_features_t features);
 

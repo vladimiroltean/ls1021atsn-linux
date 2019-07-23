@@ -89,7 +89,7 @@ config GIANFAR
 	tristate "Gianfar Ethernet"
 	depends on HAS_DMA
 	select FSL_PQ_MDIO
-	select PHYLIB
+	select PHYLINK
 	select CRC32
 	---help---
 	  This driver supports the Gigabit TSEC on the MPC83xx, MPC85xx,
