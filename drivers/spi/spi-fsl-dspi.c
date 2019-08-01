@@ -198,9 +198,6 @@ struct fsl_dspi {
 	u8			bytes_per_word;
 	const struct fsl_dspi_devtype_data *devtype_data;
 
-	wait_queue_head_t	waitq;
-	u32			waitflags;
-
 	struct gpio_desc	*debug_gpio;
 	struct fsl_dspi_dma	*dma;
 };
@@ -665,6 +662,49 @@ static void dspi_eoq_read(struct fsl_dspi *dspi)
 		dspi_push_rx(dspi, fifo_read(dspi));
 }
 
+static int dspi_poll(struct fsl_dspi *dspi)
+{
+	struct spi_message *msg = dspi->cur_msg;
+	u32 spi_sr, spi_tcr;
+	int tries = 10000;
+	u16 spi_tcnt;
+
+	do {
+		regmap_read(dspi->regmap, SPI_SR, &spi_sr);
+		regmap_write(dspi->regmap, SPI_SR, spi_sr);
+
+		if (!(spi_sr & (SPI_SR_EOQF | SPI_SR_TCFQF)))
+			continue;
+
+		/* Get transfer counter (in number of SPI transfers). It was
+		 * reset to 0 when transfer(s) were started.
+		 */
+		regmap_read(dspi->regmap, SPI_TCR, &spi_tcr);
+		spi_tcnt = SPI_TCR_GET_TCNT(spi_tcr);
+		/* Update total number of bytes that were transferred */
+		msg->actual_length += spi_tcnt * dspi->bytes_per_word;
+
+		if (dspi->devtype_data->trans_mode == DSPI_EOQ_MODE)
+			dspi_eoq_read(dspi);
+		else
+			dspi_tcfq_read(dspi);
+
+		if (!dspi->len)
+			/* Success! */
+			break;
+
+		if (dspi->devtype_data->trans_mode == DSPI_EOQ_MODE)
+			dspi_eoq_write(dspi);
+		else
+			dspi_tcfq_write(dspi);
+	} while (--tries);
+
+	if (!tries)
+		return -ETIMEDOUT;
+
+	return 0;
+}
+
 static int dspi_transfer_one_message(struct spi_master *master,
 				     struct spi_message *message)
 {
@@ -752,11 +792,10 @@ static int dspi_transfer_one_message(struct spi_master *master,
 		}
 
 		if (trans_mode != DSPI_DMA_MODE) {
-			if (wait_event_interruptible(dspi->waitq,
-						     dspi->waitflags))
+			status = dspi_poll(dspi);
+			if (status < 0)
 				dev_err(&dspi->pdev->dev,
 					"wait transfer complete fail!\n");
-			dspi->waitflags = 0;
 			ptp_read_system_postts(spi->ptp_sts);
 			dspi_debug_gpio(dspi, 0);
 		}
@@ -847,6 +886,7 @@ static void dspi_cleanup(struct spi_device *spi)
 	kfree(chip);
 }
 
+<<<<<<< HEAD
 static irqreturn_t dspi_interrupt(int irq, void *dev_id)
 {
 	struct fsl_dspi *dspi = (struct fsl_dspi *)dev_id;
@@ -909,6 +949,8 @@ static irqreturn_t dspi_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+=======
+>>>>>>> 192a7f71ca5e... spi: fsl-dspi: Switch driver to use poll mode instead of interrupts
 static const struct of_device_id fsl_dspi_dt_ids[] = {
 	{ .compatible = "fsl,vf610-dspi", .data = &vf610_data, },
 	{ .compatible = "fsl,ls1021a-v1.0-dspi", .data = &ls1021a_v1_data, },
@@ -1124,6 +1166,7 @@ static int dspi_probe(struct platform_device *pdev)
 		goto out_master_put;
 
 	dspi_init(dspi);
+#if 0
 	dspi->irq = platform_get_irq(pdev, 0);
 	if (dspi->irq < 0) {
 		dev_err(&pdev->dev, "can't get platform irq\n");
@@ -1137,6 +1180,7 @@ static int dspi_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Unable to attach DSPI interrupt\n");
 		goto out_clk_put;
 	}
+#endif
 
 	if (dspi->devtype_data->trans_mode == DSPI_DMA_MODE) {
 		ret = dspi_request_dma(dspi, res->start);
@@ -1149,7 +1193,6 @@ static int dspi_probe(struct platform_device *pdev)
 	master->max_speed_hz =
 		clk_get_rate(dspi->clk) / dspi->devtype_data->max_clock_factor;
 
-	init_waitqueue_head(&dspi->waitq);
 	platform_set_drvdata(pdev, master);
 
 	ret = spi_register_master(master);
