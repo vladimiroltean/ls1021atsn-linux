@@ -727,6 +727,7 @@ static int dspi_transfer_one_message(struct spi_master *master,
 				     SPI_CTARE_DTCP(1));
 
 		dspi_debug_gpio(dspi, 1);
+		ptp_read_system_prets(spi->ptp_sts);
 		trans_mode = dspi->devtype_data->trans_mode;
 		switch (trans_mode) {
 		case DSPI_EOQ_MODE:
@@ -756,6 +757,7 @@ static int dspi_transfer_one_message(struct spi_master *master,
 				dev_err(&dspi->pdev->dev,
 					"wait transfer complete fail!\n");
 			dspi->waitflags = 0;
+			ptp_read_system_postts(spi->ptp_sts);
 			dspi_debug_gpio(dspi, 0);
 		}
 

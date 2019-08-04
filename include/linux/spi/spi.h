@@ -13,6 +13,7 @@
 #include <linux/completion.h>
 #include <linux/scatterlist.h>
 #include <linux/gpio/consumer.h>
+#include <linux/ptp_clock_kernel.h>
 
 struct dma_chan;
 struct property_entry;
@@ -177,6 +178,8 @@ struct spi_device {
 
 	/* the statistics */
 	struct spi_statistics	statistics;
+
+	struct ptp_system_timestamp *ptp_sts;
 
 	/*
 	 * likely need more hooks for more protocol options affecting how

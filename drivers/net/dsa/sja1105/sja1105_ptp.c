@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019, Vladimir Oltean <olteanv@gmail.com>
  */
+#include <linux/spi/spi.h>
 #include "sja1105.h"
 #include <linux/gpio/consumer.h>
 
@@ -263,14 +264,17 @@ int sja1105_ptp_reset(struct sja1105_private *priv)
 	return rc;
 }
 
-static int sja1105_ptp_gettime(struct ptp_clock_info *ptp,
-			       struct timespec64 *ts)
+static int sja1105_ptp_gettimex(struct ptp_clock_info *ptp,
+				struct timespec64 *ts,
+				struct ptp_system_timestamp *sts)
 {
 	struct sja1105_private *priv = ptp_to_sja1105(ptp);
 	u64 ns;
 
 	mutex_lock(&priv->ptp_lock);
+	priv->spidev->ptp_sts = sts;
 	ns = timecounter_read(&priv->tstamp_tc);
+	priv->spidev->ptp_sts = NULL;
 	mutex_unlock(&priv->ptp_lock);
 
 	*ts = ns_to_timespec64(ns);
@@ -369,9 +373,10 @@ static void sja1105_ptp_overflow_check(struct work_struct *work)
 {
 	struct delayed_work *dw = to_delayed_work(work);
 	struct sja1105_private *priv = rw_to_sja1105(dw);
+	struct ptp_system_timestamp dummy;
 	struct timespec64 ts;
 
-	sja1105_ptp_gettime(&priv->ptp_caps, &ts);
+	sja1105_ptp_gettimex(&priv->ptp_caps, &ts, &dummy);
 
 	schedule_delayed_work(&priv->refresh_work, SJA1105_REFRESH_INTERVAL);
 }
@@ -524,7 +529,7 @@ static const struct ptp_clock_info sja1105_ptp_caps = {
 	.name		= "SJA1105 PHC",
 	.adjfine	= sja1105_ptp_adjfine,
 	.adjtime	= sja1105_ptp_adjtime,
-	.gettime64	= sja1105_ptp_gettime,
+	.gettimex64	= sja1105_ptp_gettimex,
 	.settime64	= sja1105_ptp_settime,
 	.enable		= sja1105_ptp_enable,
 	.max_adj	= SJA1105_MAX_ADJ_PPB,
