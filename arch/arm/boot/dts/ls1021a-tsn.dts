@@ -54,7 +54,7 @@
 		#size-cells = <0>;
 		compatible = "nxp,sja1105t";
 		/* 12 MHz */
-		spi-max-frequency = <12000000>;
+		spi-max-frequency = <1200000>;
 		/* Sample data on trailing clock edge */
 		spi-cpha;
 		/* SPI controller settings for SJA1105 timing requirements */
