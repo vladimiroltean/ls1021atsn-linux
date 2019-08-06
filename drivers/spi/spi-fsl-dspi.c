@@ -1,34 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0+
-//
-// Copyright 2013 Freescale Semiconductor, Inc.
-//
-// Freescale DSPI driver
-// This file contains a driver for the Freescale DSPI
-
+/* Copyright (c) 2013, Freescale Semiconductor
+ * Copyright (c) 2019, NXP Semiconductors
+ *
+ * Freescale DSPI driver
+ * This file contains a driver for the Freescale DSPI
+ */
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/dmaengine.h>
 #include <linux/dma-mapping.h>
-#include <linux/err.h>
-#include <linux/errno.h>
 #include <linux/interrupt.h>
-#include <linux/io.h>
 #include <linux/kernel.h>
-#include <linux/math64.h>
 #include <linux/module.h>
-#include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/platform_device.h>
-#include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/sched.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/spi-fsl-dspi.h>
-#include <linux/spi/spi_bitbang.h>
-#include <linux/time.h>
 
-#define DRIVER_NAME "fsl-dspi"
+#define DRIVER_NAME			"fsl-dspi"
 
 #ifdef CONFIG_M5441x
 #define DSPI_FIFO_SIZE			16
@@ -37,97 +27,98 @@
 #endif
 #define DSPI_DMA_BUFSIZE		(DSPI_FIFO_SIZE * 1024)
 
-#define SPI_MCR		0x00
-#define SPI_MCR_MASTER		(1 << 31)
-#define SPI_MCR_PCSIS		(0x3F << 16)
-#define SPI_MCR_CLR_TXF	(1 << 11)
-#define SPI_MCR_CLR_RXF	(1 << 10)
-#define SPI_MCR_XSPI		(1 << 3)
+#define SPI_MCR				0x00
+#define SPI_MCR_MASTER			BIT(31)
+#define SPI_MCR_PCSIS			(0x3F << 16)
+#define SPI_MCR_CLR_TXF			BIT(11)
+#define SPI_MCR_CLR_RXF			BIT(10)
+#define SPI_MCR_XSPI			BIT(3)
 
-#define SPI_TCR			0x08
-#define SPI_TCR_GET_TCNT(x)	(((x) & 0xffff0000) >> 16)
+#define SPI_TCR				0x08
+#define SPI_TCR_GET_TCNT(x)		(((x) & GENMASK(31, 16)) >> 16)
 
-#define SPI_CTAR(x)		(0x0c + (((x) & 0x3) * 4))
-#define SPI_CTAR_FMSZ(x)	(((x) & 0x0000000f) << 27)
-#define SPI_CTAR_CPOL(x)	((x) << 26)
-#define SPI_CTAR_CPHA(x)	((x) << 25)
-#define SPI_CTAR_LSBFE(x)	((x) << 24)
-#define SPI_CTAR_PCSSCK(x)	(((x) & 0x00000003) << 22)
-#define SPI_CTAR_PASC(x)	(((x) & 0x00000003) << 20)
-#define SPI_CTAR_PDT(x)	(((x) & 0x00000003) << 18)
-#define SPI_CTAR_PBR(x)	(((x) & 0x00000003) << 16)
-#define SPI_CTAR_CSSCK(x)	(((x) & 0x0000000f) << 12)
-#define SPI_CTAR_ASC(x)	(((x) & 0x0000000f) << 8)
-#define SPI_CTAR_DT(x)		(((x) & 0x0000000f) << 4)
-#define SPI_CTAR_BR(x)		((x) & 0x0000000f)
-#define SPI_CTAR_SCALE_BITS	0xf
+#define SPI_CTAR(x)			(0x0c + (((x) & GENMASK(1, 0)) * 4))
+#define SPI_CTAR_FMSZ(x)		(((x) << 27) & GENMASK(30, 27))
+#define SPI_CTAR_CPOL			BIT(26)
+#define SPI_CTAR_CPHA			BIT(25)
+#define SPI_CTAR_LSBFE			BIT(24)
+#define SPI_CTAR_PCSSCK(x)		(((x) << 22) & GENMASK(23, 22))
+#define SPI_CTAR_PASC(x)		(((x) << 20) & GENMASK(21, 20))
+#define SPI_CTAR_PDT(x)			(((x) << 18) & GENMASK(19, 18))
+#define SPI_CTAR_PBR(x)			(((x) << 16) & GENMASK(17, 16))
+#define SPI_CTAR_CSSCK(x)		(((x) << 12) & GENMASK(15, 12))
+#define SPI_CTAR_ASC(x)			(((x) << 8) & GENMASK(11, 8))
+#define SPI_CTAR_DT(x)			(((x) << 4) & GENMASK(7, 4))
+#define SPI_CTAR_BR(x)			((x) & GENMASK(3, 0))
+#define SPI_CTAR_SCALE_BITS		0xf
 
-#define SPI_CTAR0_SLAVE	0x0c
+#define SPI_CTAR0_SLAVE			0x0c
 
-#define SPI_SR			0x2c
-#define SPI_SR_EOQF		0x10000000
-#define SPI_SR_TCFQF		0x80000000
-#define SPI_SR_CLEAR		0x9aaf0000
+#define SPI_SR				0x2c
+#define SPI_SR_TCFQF			BIT(31)
+#define SPI_SR_EOQF			BIT(28)
+#define SPI_SR_TFUF			BIT(27)
+#define SPI_SR_TFFF			BIT(25)
+#define SPI_SR_CMDTCF			BIT(23)
+#define SPI_SR_SPEF			BIT(21)
+#define SPI_SR_RFOF			BIT(19)
+#define SPI_SR_TFIWF			BIT(18)
+#define SPI_SR_RFDF			BIT(17)
+#define SPI_SR_CMDFFF			BIT(16)
+#define SPI_SR_CLEAR			SPI_SR_TCFQF | SPI_SR_EOQF | \
+					SPI_SR_TFUF | SPI_SR_TFFF | \
+					SPI_SR_CMDTCF | SPI_SR_SPEF | \
+					SPI_SR_RFOF | SPI_SR_TFIWF | \
+					SPI_SR_RFDF | SPI_SR_CMDFFF
 
-#define SPI_RSER_TFFFE		BIT(25)
-#define SPI_RSER_TFFFD		BIT(24)
-#define SPI_RSER_RFDFE		BIT(17)
-#define SPI_RSER_RFDFD		BIT(16)
+#define SPI_RSER_TFFFE			BIT(25)
+#define SPI_RSER_TFFFD			BIT(24)
+#define SPI_RSER_RFDFE			BIT(17)
+#define SPI_RSER_RFDFD			BIT(16)
 
-#define SPI_RSER		0x30
-#define SPI_RSER_EOQFE		0x10000000
-#define SPI_RSER_TCFQE		0x80000000
+#define SPI_RSER			0x30
+#define SPI_RSER_TCFQE			BIT(31)
+#define SPI_RSER_EOQFE			BIT(28)
 
-#define SPI_PUSHR		0x34
-#define SPI_PUSHR_CMD_CONT	(1 << 15)
-#define SPI_PUSHR_CONT		(SPI_PUSHR_CMD_CONT << 16)
-#define SPI_PUSHR_CMD_CTAS(x)	(((x) & 0x0003) << 12)
-#define SPI_PUSHR_CTAS(x)	(SPI_PUSHR_CMD_CTAS(x) << 16)
-#define SPI_PUSHR_CMD_EOQ	(1 << 11)
-#define SPI_PUSHR_EOQ		(SPI_PUSHR_CMD_EOQ << 16)
-#define SPI_PUSHR_CMD_CTCNT	(1 << 10)
-#define SPI_PUSHR_CTCNT		(SPI_PUSHR_CMD_CTCNT << 16)
-#define SPI_PUSHR_CMD_PCS(x)	((1 << x) & 0x003f)
-#define SPI_PUSHR_PCS(x)	(SPI_PUSHR_CMD_PCS(x) << 16)
-#define SPI_PUSHR_TXDATA(x)	((x) & 0x0000ffff)
+#define SPI_PUSHR			0x34
+#define SPI_PUSHR_CMD_CONT		BIT(15)
+#define SPI_PUSHR_CMD_CTAS(x)		(((x) << 12 & GENMASK(14, 12)))
+#define SPI_PUSHR_CMD_EOQ		BIT(11)
+#define SPI_PUSHR_CMD_CTCNT		BIT(10)
+#define SPI_PUSHR_CMD_PCS(x)		(BIT(x) & GENMASK(5, 0))
 
-#define SPI_PUSHR_SLAVE	0x34
+#define SPI_PUSHR_SLAVE			0x34
 
-#define SPI_POPR		0x38
-#define SPI_POPR_RXDATA(x)	((x) & 0x0000ffff)
+#define SPI_POPR			0x38
+#define SPI_POPR_RXDATA(x)		((x) & GENMASK(15, 0))
 
-#define SPI_TXFR0		0x3c
-#define SPI_TXFR1		0x40
-#define SPI_TXFR2		0x44
-#define SPI_TXFR3		0x48
-#define SPI_RXFR0		0x7c
-#define SPI_RXFR1		0x80
-#define SPI_RXFR2		0x84
-#define SPI_RXFR3		0x88
+#define SPI_TXFR0			0x3c
+#define SPI_TXFR1			0x40
+#define SPI_TXFR2			0x44
+#define SPI_TXFR3			0x48
+#define SPI_RXFR0			0x7c
+#define SPI_RXFR1			0x80
+#define SPI_RXFR2			0x84
+#define SPI_RXFR3			0x88
 
-#define SPI_CTARE(x)		(0x11c + (((x) & 0x3) * 4))
-#define SPI_CTARE_FMSZE(x)	(((x) & 0x1) << 16)
-#define SPI_CTARE_DTCP(x)	((x) & 0x7ff)
+#define SPI_CTARE(x)			(0x11c + (((x) & GENMASK(1, 0)) * 4))
+#define SPI_CTARE_FMSZE(x)		(((x) & 0x1) << 16)
+#define SPI_CTARE_DTCP(x)		((x) & 0x7ff)
 
-#define SPI_SREX		0x13c
+#define SPI_SREX			0x13c
 
-#define SPI_FRAME_BITS(bits)	SPI_CTAR_FMSZ((bits) - 1)
-#define SPI_FRAME_BITS_MASK	SPI_CTAR_FMSZ(0xf)
-#define SPI_FRAME_BITS_16	SPI_CTAR_FMSZ(0xf)
-#define SPI_FRAME_BITS_8	SPI_CTAR_FMSZ(0x7)
-
-#define SPI_FRAME_EBITS(bits)	SPI_CTARE_FMSZE(((bits) - 1) >> 4)
-#define SPI_FRAME_EBITS_MASK	SPI_CTARE_FMSZE(1)
+#define SPI_FRAME_BITS(bits)		SPI_CTAR_FMSZ((bits) - 1)
+#define SPI_FRAME_EBITS(bits)		SPI_CTARE_FMSZE(((bits) - 1) >> 4)
 
 /* Register offsets for regmap_pushr */
-#define PUSHR_CMD		0x0
-#define PUSHR_TX		0x2
+#define PUSHR_CMD			0x0
+#define PUSHR_TX			0x2
 
-#define SPI_CS_INIT		0x01
-#define SPI_CS_ASSERT		0x02
-#define SPI_CS_DROP		0x04
+#define SPI_CS_INIT			0x01
+#define SPI_CS_ASSERT			0x02
+#define SPI_CS_DROP			0x04
 
-#define DMA_COMPLETION_TIMEOUT	msecs_to_jiffies(3000)
+#define DMA_COMPLETION_TIMEOUT		msecs_to_jiffies(3000)
 
 struct chip_data {
 	u32 ctar_val;
@@ -501,7 +492,7 @@ static void dspi_release_dma(struct fsl_dspi *dspi)
 }
 
 static void hz_to_spi_baud(char *pbr, char *br, int speed_hz,
-		unsigned long clkrate)
+			   unsigned long clkrate)
 {
 	/* Valid baud rate pre-scaler values */
 	int pbr_tbl[4] = {2, 3, 5, 7};
@@ -538,15 +529,15 @@ static void hz_to_spi_baud(char *pbr, char *br, int speed_hz,
 }
 
 static void ns_delay_scale(char *psc, char *sc, int delay_ns,
-		unsigned long clkrate)
+			   unsigned long clkrate)
 {
-	int pscale_tbl[4] = {1, 3, 5, 7};
 	int scale_needed, scale, minscale = INT_MAX;
-	int i, j;
+	int pscale_tbl[4] = {1, 3, 5, 7};
 	u32 remainder;
+	int i, j;
 
 	scale_needed = div_u64_rem((u64)delay_ns * clkrate, NSEC_PER_SEC,
-			&remainder);
+				   &remainder);
 	if (remainder)
 		scale_needed++;
 
@@ -601,7 +592,7 @@ static void dspi_tcfq_write(struct fsl_dspi *dspi)
 		 */
 		u32 data = dspi_pop_tx(dspi);
 
-		if (dspi->cur_chip->ctar_val & SPI_CTAR_LSBFE(1)) {
+		if (dspi->cur_chip->ctar_val & SPI_CTAR_LSBFE) {
 			/* LSB */
 			tx_fifo_write(dspi, data & 0xFFFF);
 			tx_fifo_write(dspi, data >> 16);
@@ -661,13 +652,13 @@ static void dspi_eoq_read(struct fsl_dspi *dspi)
 }
 
 static int dspi_transfer_one_message(struct spi_master *master,
-		struct spi_message *message)
+				     struct spi_message *message)
 {
 	struct fsl_dspi *dspi = spi_master_get_devdata(master);
 	struct spi_device *spi = message->spi;
+	enum dspi_trans_mode trans_mode;
 	struct spi_transfer *transfer;
 	int status = 0;
-	enum dspi_trans_mode trans_mode;
 
 	message->actual_length = 0;
 
@@ -718,8 +709,8 @@ static int dspi_transfer_one_message(struct spi_master *master,
 			     SPI_FRAME_BITS(transfer->bits_per_word));
 		if (dspi->devtype_data->xspi_mode)
 			regmap_write(dspi->regmap, SPI_CTARE(0),
-				     SPI_FRAME_EBITS(transfer->bits_per_word)
-				     | SPI_CTARE_DTCP(1));
+				     SPI_FRAME_EBITS(transfer->bits_per_word) |
+				     SPI_CTARE_DTCP(1));
 
 		trans_mode = dspi->devtype_data->trans_mode;
 		switch (trans_mode) {
@@ -765,12 +756,12 @@ out:
 
 static int dspi_setup(struct spi_device *spi)
 {
-	struct chip_data *chip;
 	struct fsl_dspi *dspi = spi_master_get_devdata(spi->master);
-	struct fsl_dspi_platform_data *pdata;
-	u32 cs_sck_delay = 0, sck_cs_delay = 0;
 	unsigned char br = 0, pbr = 0, pcssck = 0, cssck = 0;
+	u32 cs_sck_delay = 0, sck_cs_delay = 0;
+	struct fsl_dspi_platform_data *pdata;
 	unsigned char pasc = 0, asc = 0;
+	struct chip_data *chip;
 	unsigned long clkrate;
 
 	/* Only alloc on first setup */
@@ -805,18 +796,22 @@ static int dspi_setup(struct spi_device *spi)
 	/* Set After SCK delay scale values */
 	ns_delay_scale(&pasc, &asc, sck_cs_delay, clkrate);
 
-	chip->ctar_val = SPI_CTAR_CPOL(spi->mode & SPI_CPOL ? 1 : 0)
-		| SPI_CTAR_CPHA(spi->mode & SPI_CPHA ? 1 : 0);
+	chip->ctar_val = 0;
+	if (spi->mode & SPI_CPOL)
+		chip->ctar_val |= SPI_CTAR_CPOL;
+	if (spi->mode & SPI_CPHA)
+		chip->ctar_val |= SPI_CTAR_CPHA;
 
 	if (!spi_controller_is_slave(dspi->master)) {
-		chip->ctar_val |= SPI_CTAR_LSBFE(spi->mode &
-						 SPI_LSB_FIRST ? 1 : 0)
-			| SPI_CTAR_PCSSCK(pcssck)
-			| SPI_CTAR_CSSCK(cssck)
-			| SPI_CTAR_PASC(pasc)
-			| SPI_CTAR_ASC(asc)
-			| SPI_CTAR_PBR(pbr)
-			| SPI_CTAR_BR(br);
+		chip->ctar_val |= SPI_CTAR_PCSSCK(pcssck) |
+				  SPI_CTAR_CSSCK(cssck) |
+				  SPI_CTAR_PASC(pasc) |
+				  SPI_CTAR_ASC(asc) |
+				  SPI_CTAR_PBR(pbr) |
+				  SPI_CTAR_BR(br);
+
+		if (spi->mode & SPI_LSB_FIRST)
+			chip->ctar_val |= SPI_CTAR_LSBFE;
 	}
 
 	spi_set_ctldata(spi, chip);
@@ -1161,12 +1156,12 @@ static int dspi_remove(struct platform_device *pdev)
 }
 
 static struct platform_driver fsl_dspi_driver = {
-	.driver.name    = DRIVER_NAME,
-	.driver.of_match_table = fsl_dspi_dt_ids,
-	.driver.owner   = THIS_MODULE,
-	.driver.pm = &dspi_pm,
-	.probe          = dspi_probe,
-	.remove		= dspi_remove,
+	.driver.name		= DRIVER_NAME,
+	.driver.of_match_table	= fsl_dspi_dt_ids,
+	.driver.owner		= THIS_MODULE,
+	.driver.pm		= &dspi_pm,
+	.probe			= dspi_probe,
+	.remove			= dspi_remove,
 };
 module_platform_driver(fsl_dspi_driver);
 
