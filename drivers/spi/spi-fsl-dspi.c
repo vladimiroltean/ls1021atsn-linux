@@ -247,7 +247,7 @@ static void dspi_push_rx(struct fsl_dspi *dspi, u32 rxdata)
 	if (!dspi->rx)
 		return;
 
-	/* Mask of undefined bits */
+	/* Mask off undefined bits */
 	rxdata &= (1 << dspi->bits_per_word) - 1;
 
 	if (dspi->bytes_per_word == 1)
@@ -283,8 +283,8 @@ static void dspi_rx_dma_callback(void *arg)
 
 static int dspi_next_xfer_dma_submit(struct fsl_dspi *dspi)
 {
-	struct fsl_dspi_dma *dma = dspi->dma;
 	struct device *dev = &dspi->pdev->dev;
+	struct fsl_dspi_dma *dma = dspi->dma;
 	int time_left;
 	int i;
 
@@ -361,9 +361,9 @@ static int dspi_next_xfer_dma_submit(struct fsl_dspi *dspi)
 
 static int dspi_dma_xfer(struct fsl_dspi *dspi)
 {
-	struct fsl_dspi_dma *dma = dspi->dma;
-	struct device *dev = &dspi->pdev->dev;
 	struct spi_message *message = dspi->cur_msg;
+	struct device *dev = &dspi->pdev->dev;
+	struct fsl_dspi_dma *dma = dspi->dma;
 	int curr_remaining_bytes;
 	int bytes_per_buffer;
 	int ret = 0;
@@ -398,9 +398,9 @@ exit:
 
 static int dspi_request_dma(struct fsl_dspi *dspi, phys_addr_t phy_addr)
 {
-	struct fsl_dspi_dma *dma;
-	struct dma_slave_config cfg;
 	struct device *dev = &dspi->pdev->dev;
+	struct dma_slave_config cfg;
+	struct fsl_dspi_dma *dma;
 	int ret;
 
 	dma = devm_kzalloc(dev, sizeof(*dma), GFP_KERNEL);
@@ -486,18 +486,19 @@ static void dspi_release_dma(struct fsl_dspi *dspi)
 	struct fsl_dspi_dma *dma = dspi->dma;
 	struct device *dev = &dspi->pdev->dev;
 
-	if (dma) {
-		if (dma->chan_tx) {
-			dma_unmap_single(dev, dma->tx_dma_phys,
-					DSPI_DMA_BUFSIZE, DMA_TO_DEVICE);
-			dma_release_channel(dma->chan_tx);
-		}
+	if (!dma)
+		return;
 
-		if (dma->chan_rx) {
-			dma_unmap_single(dev, dma->rx_dma_phys,
-					DSPI_DMA_BUFSIZE, DMA_FROM_DEVICE);
-			dma_release_channel(dma->chan_rx);
-		}
+	if (dma->chan_tx) {
+		dma_unmap_single(dev, dma->tx_dma_phys,
+				DSPI_DMA_BUFSIZE, DMA_TO_DEVICE);
+		dma_release_channel(dma->chan_tx);
+	}
+
+	if (dma->chan_rx) {
+		dma_unmap_single(dev, dma->rx_dma_phys,
+				DSPI_DMA_BUFSIZE, DMA_FROM_DEVICE);
+		dma_release_channel(dma->chan_rx);
 	}
 }
 
@@ -507,9 +508,9 @@ static void hz_to_spi_baud(char *pbr, char *br, int speed_hz,
 	/* Valid baud rate pre-scaler values */
 	int pbr_tbl[4] = {2, 3, 5, 7};
 	int brs[16] = {	2,	4,	6,	8,
-		16,	32,	64,	128,
-		256,	512,	1024,	2048,
-		4096,	8192,	16384,	32768 };
+			16,	32,	64,	128,
+			256,	512,	1024,	2048,
+			4096,	8192,	16384,	32768 };
 	int scale_needed, scale, minscale = INT_MAX;
 	int i, j;
 
@@ -656,7 +657,7 @@ static void dspi_eoq_read(struct fsl_dspi *dspi)
 {
 	int fifo_size = DSPI_FIFO_SIZE;
 
-	/* Read one FIFO entry at and push to rx buffer */
+	/* Read one FIFO entry and push to rx buffer */
 	while ((dspi->rx < dspi->rx_end) && fifo_size--)
 		dspi_push_rx(dspi, fifo_read(dspi));
 }
@@ -678,7 +679,7 @@ static int dspi_transfer_one_message(struct spi_master *master,
 		dspi->cur_chip = spi_get_ctldata(spi);
 		/* Prepare command word for CMD FIFO */
 		dspi->tx_cmd = SPI_PUSHR_CMD_CTAS(0) |
-			SPI_PUSHR_CMD_PCS(spi->chip_select);
+			       SPI_PUSHR_CMD_PCS(spi->chip_select);
 		if (list_is_last(&dspi->cur_transfer->transfer_list,
 				 &dspi->cur_msg->transfers)) {
 			/* Leave PCS activated after last transfer when
@@ -735,8 +736,8 @@ static int dspi_transfer_one_message(struct spi_master *master,
 			break;
 		case DSPI_DMA_MODE:
 			regmap_write(dspi->regmap, SPI_RSER,
-				SPI_RSER_TFFFE | SPI_RSER_TFFFD |
-				SPI_RSER_RFDFE | SPI_RSER_RFDFD);
+				     SPI_RSER_TFFFE | SPI_RSER_TFFFD |
+				     SPI_RSER_RFDFE | SPI_RSER_RFDFD);
 			status = dspi_dma_xfer(dspi);
 			break;
 		default:
@@ -748,7 +749,7 @@ static int dspi_transfer_one_message(struct spi_master *master,
 
 		if (trans_mode != DSPI_DMA_MODE) {
 			if (wait_event_interruptible(dspi->waitq,
-						dspi->waitflags))
+						     dspi->waitflags))
 				dev_err(&dspi->pdev->dev,
 					"wait transfer complete fail!\n");
 			dspi->waitflags = 0;
@@ -836,7 +837,7 @@ static void dspi_cleanup(struct spi_device *spi)
 	struct chip_data *chip = spi_get_ctldata((struct spi_device *)spi);
 
 	dev_dbg(&spi->dev, "spi_device %u.%u cleanup\n",
-			spi->master->bus_num, spi->chip_select);
+		spi->master->bus_num, spi->chip_select);
 
 	kfree(chip);
 }
@@ -851,7 +852,6 @@ static irqreturn_t dspi_interrupt(int irq, void *dev_id)
 
 	regmap_read(dspi->regmap, SPI_SR, &spi_sr);
 	regmap_write(dspi->regmap, SPI_SR, spi_sr);
-
 
 	if (spi_sr & (SPI_SR_EOQF | SPI_SR_TCFQF)) {
 		/* Get transfer counter (in number of SPI transfers). It was
