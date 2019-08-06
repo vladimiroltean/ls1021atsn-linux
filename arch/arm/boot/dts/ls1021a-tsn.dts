@@ -5,6 +5,7 @@
 
 /dts-v1/;
 #include "ls1021a.dtsi"
+#include <dt-bindings/gpio/gpio.h>
 
 / {
 	model = "NXP LS1021A-TSN Board";
@@ -34,6 +35,8 @@
 
 &dspi0 {
 	bus-num = <0>;
+	/* EXP1_GPIO7 is GPIO4_19 */
+	debug-gpios = <&gpio3 19 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 
 	/* ADG704BRMZ 1:4 SPI mux/demux */
@@ -57,6 +60,8 @@
 		/* SPI controller settings for SJA1105 timing requirements */
 		fsl,spi-cs-sck-delay = <1000>;
 		fsl,spi-sck-cs-delay = <1000>;
+		/* EXP1_GPIO6 is GPIO4_18 */
+		debug-gpios = <&gpio3 18 GPIO_ACTIVE_HIGH>;
 
 		ports {
 			#address-cells = <1>;

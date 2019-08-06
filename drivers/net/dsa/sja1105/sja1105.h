@@ -89,6 +89,7 @@ struct sja1105_private {
 	bool rgmii_tx_delay[SJA1105_NUM_PORTS];
 	const struct sja1105_info *info;
 	struct gpio_desc *reset_gpio;
+	struct gpio_desc *debug_gpio;
 	struct spi_device *spidev;
 	struct dsa_switch *ds;
 	struct sja1105_port ports[SJA1105_NUM_PORTS];
@@ -129,6 +130,7 @@ typedef enum {
 
 /* From sja1105_main.c */
 int sja1105_static_config_reload(struct sja1105_private *priv);
+void sja1105_debug_gpio(struct sja1105_private *priv, bool enabled);
 
 /* From sja1105_spi.c */
 int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,

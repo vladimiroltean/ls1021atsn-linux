@@ -200,6 +200,7 @@ struct fsl_dspi {
 	wait_queue_head_t	waitq;
 	u32			waitflags;
 
+	struct gpio_desc	*debug_gpio;
 	struct fsl_dspi_dma	*dma;
 };
 
@@ -218,6 +219,15 @@ static u32 dspi_pop_tx(struct fsl_dspi *dspi)
 	}
 	dspi->len -= dspi->bytes_per_word;
 	return txdata;
+}
+
+void dspi_debug_gpio(struct fsl_dspi *dspi, bool enabled)
+{
+	if (IS_ERR(dspi->debug_gpio)) {
+		dev_err(&dspi->pdev->dev, "Bad debug GPIO!\n");
+		return;
+	}
+	gpiod_set_value_cansleep(dspi->debug_gpio, enabled);
 }
 
 static u32 dspi_pop_tx_pushr(struct fsl_dspi *dspi)
@@ -712,6 +722,7 @@ static int dspi_transfer_one_message(struct spi_master *master,
 				     SPI_FRAME_EBITS(transfer->bits_per_word) |
 				     SPI_CTARE_DTCP(1));
 
+		dspi_debug_gpio(dspi, 1);
 		trans_mode = dspi->devtype_data->trans_mode;
 		switch (trans_mode) {
 		case DSPI_EOQ_MODE:
@@ -741,6 +752,7 @@ static int dspi_transfer_one_message(struct spi_master *master,
 				dev_err(&dspi->pdev->dev,
 					"wait transfer complete fail!\n");
 			dspi->waitflags = 0;
+			dspi_debug_gpio(dspi, 0);
 		}
 
 		if (transfer->delay_usecs)
@@ -1086,6 +1098,9 @@ static int dspi_probe(struct platform_device *pdev)
 			goto out_master_put;
 		}
 	}
+
+	dspi->debug_gpio = devm_gpiod_get(&pdev->dev, "debug",
+					  GPIOD_OUT_HIGH);
 
 	dspi->clk = devm_clk_get(&pdev->dev, "dspi");
 	if (IS_ERR(dspi->clk)) {

@@ -2,6 +2,7 @@
 /* Copyright (c) 2019, Vladimir Oltean <olteanv@gmail.com>
  */
 #include "sja1105.h"
+#include <linux/gpio/consumer.h>
 
 /* The adjfine API clamps ppb between [-32,768,000, 32,768,000], and
  * therefore scaled_ppm between [-2,147,483,648, 2,147,483,647].
@@ -353,8 +354,10 @@ static u64 sja1105_ptptsclk_read(const struct cyclecounter *cc)
 	u64 ptptsclk = 0;
 	int rc;
 
+	sja1105_debug_gpio(priv, 1);
 	rc = sja1105_spi_send_int(priv, SPI_READ, regs->ptptsclk,
 				  &ptptsclk, 8);
+	sja1105_debug_gpio(priv, 0);
 	if (rc < 0)
 		dev_err_ratelimited(priv->ds->dev,
 				    "failed to read ptp cycle counter: %d\n",

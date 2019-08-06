@@ -23,6 +23,15 @@
 #include <linux/dsa/8021q.h>
 #include "sja1105.h"
 
+void sja1105_debug_gpio(struct sja1105_private *priv, bool enabled)
+{
+	if (IS_ERR(priv->debug_gpio)) {
+		dev_err(priv->ds->dev, "Bad debug GPIO!\n");
+		return;
+	}
+	gpiod_set_value_cansleep(priv->debug_gpio, enabled);
+}
+
 static void sja1105_hw_reset(struct gpio_desc *gpio, unsigned int pulse_len,
 			     unsigned int startup_delay)
 {
@@ -2126,6 +2135,8 @@ static int sja1105_probe(struct spi_device *spi)
 		dev_dbg(dev, "reset-gpios not defined, ignoring\n");
 	else
 		sja1105_hw_reset(priv->reset_gpio, 1, 1);
+
+	priv->debug_gpio = devm_gpiod_get(dev, "debug", GPIOD_OUT_HIGH);
 
 	/* Populate our driver private structure (priv) based on
 	 * the device tree node that was probed (spi)
