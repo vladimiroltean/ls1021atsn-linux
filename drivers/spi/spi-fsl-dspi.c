@@ -145,7 +145,7 @@ static const struct fsl_dspi_devtype_data vf610_data = {
 };
 
 static const struct fsl_dspi_devtype_data ls1021a_v1_data = {
-	.trans_mode = DSPI_EOQ_MODE,
+	.trans_mode = DSPI_TCFQ_MODE,
 	.max_clock_factor = 8,
 };
 
@@ -612,10 +612,17 @@ static void dspi_tcfq_write(struct fsl_dspi *dspi)
 		}
 		cmd_fifo_write(dspi);
 	} else {
+		u32 spi_sr;
+
 		/* Write one entry to both TX FIFO and CMD FIFO
 		 * simultaneously.
 		 */
-		fifo_write(dspi);
+		do {
+			fifo_write(dspi);
+			regmap_read(dspi->regmap, SPI_SR, &spi_sr);
+			regmap_update_bits(dspi->regmap, SPI_SR,
+					   SPI_SR_TFFF, SPI_SR_TFFF);
+		} while (spi_sr & SPI_SR_TFFF);
 	}
 }
 
@@ -629,7 +636,14 @@ static u32 fifo_read(struct fsl_dspi *dspi)
 
 static void dspi_tcfq_read(struct fsl_dspi *dspi)
 {
-	dspi_push_rx(dspi, fifo_read(dspi));
+	u32 spi_sr;
+
+	do {
+		dspi_push_rx(dspi, fifo_read(dspi));
+		regmap_read(dspi->regmap, SPI_SR, &spi_sr);
+		regmap_update_bits(dspi->regmap, SPI_SR,
+				   SPI_SR_RFDF, SPI_SR_RFDF);
+	} while (spi_sr & SPI_SR_RFDF);
 }
 
 static void dspi_eoq_write(struct fsl_dspi *dspi)
@@ -779,7 +793,9 @@ static int dspi_transfer_one_message(struct spi_master *master,
 			dspi_eoq_write(dspi);
 			break;
 		case DSPI_TCFQ_MODE:
-			regmap_write(dspi->regmap, SPI_RSER, SPI_RSER_TCFQE);
+			regmap_write(dspi->regmap, SPI_RSER,
+				     SPI_RSER_TFFFE | SPI_RSER_RFDFE | SPI_RSER_TCFQE);
+			/*regmap_write(dspi->regmap, SPI_RSER, SPI_RSER_TCFQE);*/
 			dspi_tcfq_write(dspi);
 			break;
 		case DSPI_DMA_MODE:
