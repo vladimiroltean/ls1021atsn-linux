@@ -23,7 +23,7 @@
 #ifdef CONFIG_M5441x
 #define DSPI_FIFO_SIZE			16
 #else
-#define DSPI_FIFO_SIZE			4
+#define DSPI_FIFO_SIZE			1
 #endif
 #define DSPI_DMA_BUFSIZE		(DSPI_FIFO_SIZE * 1024)
 
@@ -143,9 +143,8 @@ static const struct fsl_dspi_devtype_data vf610_data = {
 };
 
 static const struct fsl_dspi_devtype_data ls1021a_v1_data = {
-	.trans_mode = DSPI_TCFQ_MODE,
+	.trans_mode = DSPI_EOQ_MODE,
 	.max_clock_factor = 8,
-	.xspi_mode = true,
 };
 
 static const struct fsl_dspi_devtype_data ls2085a_data = {
@@ -246,6 +245,8 @@ static void dspi_push_rx(struct fsl_dspi *dspi, u32 rxdata)
 {
 	if (!dspi->rx)
 		return;
+
+	dev_err(&dspi->pdev->dev, "%s: rxdata 0x%x\n", __func__, rxdata);
 
 	/* Mask off undefined bits */
 	rxdata &= (1 << dspi->bits_per_word) - 1;
@@ -852,6 +853,12 @@ static irqreturn_t dspi_interrupt(int irq, void *dev_id)
 
 	regmap_read(dspi->regmap, SPI_SR, &spi_sr);
 	regmap_write(dspi->regmap, SPI_SR, spi_sr);
+
+	if (spi_sr & SPI_SR_ERROR) {
+		dev_err(&dspi->pdev->dev, "Error in SPI SR: 0x%x\n",
+			spi_sr);
+			return IRQ_HANDLED;
+	}
 
 	if (spi_sr & (SPI_SR_EOQF | SPI_SR_TCFQF)) {
 		/* Get transfer counter (in number of SPI transfers). It was
