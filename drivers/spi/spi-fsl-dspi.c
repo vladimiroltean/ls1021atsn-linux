@@ -245,8 +245,6 @@ static void dspi_push_rx(struct fsl_dspi *dspi, u32 rxdata)
 	if (!dspi->rx)
 		return;
 
-	dev_err(&dspi->pdev->dev, "%s: rxdata 0x%x\n", __func__, rxdata);
-
 	/* Mask off undefined bits */
 	rxdata &= (1 << dspi->bits_per_word) - 1;
 
