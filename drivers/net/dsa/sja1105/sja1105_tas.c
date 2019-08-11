@@ -403,6 +403,290 @@ int sja1105_setup_tc_taprio(struct dsa_switch *ds, int port,
 	return sja1105_static_config_reload(priv, SJA1105_SCHEDULING);
 }
 
+static int sja1105_tas_check_running(struct sja1105_private *priv)
+{
+	struct sja1105_tas_data *tas_data = &priv->tas_data;
+	struct sja1105_ptp_cmd cmd = {0};
+	int rc;
+
+	rc = sja1105_ptp_commit(priv->ds, &cmd, SPI_READ);
+	if (rc < 0)
+		return rc;
+
+	if (cmd.ptpstrtsch == 1)
+		/* Schedule successfully started */
+		tas_data->state = SJA1105_TAS_STATE_RUNNING;
+	else if (cmd.ptpstopsch == 1)
+		/* Schedule is stopped */
+		tas_data->state = SJA1105_TAS_STATE_DISABLED;
+	else
+		/* Schedule is probably not configured with PTP clock source */
+		rc = -EINVAL;
+
+	return rc;
+}
+
+/* Write to PTPCLKCORP */
+static int sja1105_tas_adjust_drift(struct sja1105_private *priv,
+				    u64 correction)
+{
+	const struct sja1105_regs *regs = priv->info->regs;
+	u32 ptpclkcorp = ns_to_sja1105_ticks(correction);
+
+	return sja1105_xfer_u32(priv, SPI_WRITE, regs->ptpclkcorp,
+				&ptpclkcorp, NULL);
+}
+
+/* Write to PTPSCHTM */
+static int sja1105_tas_set_base_time(struct sja1105_private *priv,
+				     u64 base_time)
+{
+	const struct sja1105_regs *regs = priv->info->regs;
+	u64 ptpschtm = ns_to_sja1105_ticks(base_time);
+
+	return sja1105_xfer_u64(priv, SPI_WRITE, regs->ptpschtm,
+				&ptpschtm, NULL);
+}
+
+static int sja1105_tas_start(struct sja1105_private *priv)
+{
+	struct sja1105_tas_data *tas_data = &priv->tas_data;
+	struct sja1105_ptp_cmd *cmd = &priv->ptp_data.cmd;
+	struct dsa_switch *ds = priv->ds;
+	int rc;
+
+	dev_dbg(ds->dev, "Starting the TAS\n");
+
+	if (tas_data->state == SJA1105_TAS_STATE_ENABLED_NOT_RUNNING ||
+	    tas_data->state == SJA1105_TAS_STATE_RUNNING) {
+		dev_err(ds->dev, "TAS already started\n");
+		return -EINVAL;
+	}
+
+	cmd->ptpstrtsch = 1;
+	cmd->ptpstopsch = 0;
+
+	rc = sja1105_ptp_commit(ds, cmd, SPI_WRITE);
+	if (rc < 0)
+		return rc;
+
+	tas_data->state = SJA1105_TAS_STATE_ENABLED_NOT_RUNNING;
+
+	return 0;
+}
+
+static int sja1105_tas_stop(struct sja1105_private *priv)
+{
+	struct sja1105_tas_data *tas_data = &priv->tas_data;
+	struct sja1105_ptp_cmd *cmd = &priv->ptp_data.cmd;
+	struct dsa_switch *ds = priv->ds;
+	int rc;
+
+	dev_dbg(ds->dev, "Stopping the TAS\n");
+
+	if (tas_data->state == SJA1105_TAS_STATE_DISABLED) {
+		dev_err(ds->dev, "TAS already disabled\n");
+		return -EINVAL;
+	}
+
+	cmd->ptpstopsch = 1;
+	cmd->ptpstrtsch = 0;
+
+	rc = sja1105_ptp_commit(ds, cmd, SPI_WRITE);
+	if (rc < 0)
+		return rc;
+
+	tas_data->state = SJA1105_TAS_STATE_DISABLED;
+
+	return 0;
+}
+
+/* The schedule engine and the PTP clock are driven by the same oscillator, and
+ * they run in parallel. But whilst the PTP clock can keep an absolute
+ * time-of-day, the schedule engine is only running in 'ticks' (25 ticks make
+ * up a delta, which is 200ns), and wrapping around at the end of each cycle.
+ * The schedule engine is started when the PTP clock reaches the PTPSCHTM time
+ * (in PTP domain).
+ * Because the PTP clock can be rate-corrected (accelerated or slowed down) by
+ * a software servo, and the schedule engine clock runs in parallel to the PTP
+ * clock, there is logic internal to the switch that periodically keeps the
+ * schedule engine from drifting away. The frequency with which this internal
+ * syntonization happens is the PTP clock correction period (PTPCLKCORP). It is
+ * a value also in the PTP clock domain, and is also rate-corrected.
+ * To be precise, during a correction period, there is logic to determine by
+ * how many scheduler clock ticks has the PTP clock drifted. At the end of each
+ * correction period/beginning of new one, the length of a delta is shrunk or
+ * expanded with an integer number of ticks, compared with the typical 25.
+ * So a delta lasts for 200ns (or 25 ticks) only on average.
+ * Sometimes it is longer, sometimes it is shorter. The internal syntonization
+ * logic can adjust for at most 5 ticks each 20 ticks.
+ *
+ * The first implication is that you should choose your schedule correction
+ * period to be an integer multiple of the schedule length. Preferably one.
+ * In case there are schedules of multiple ports active, then the correction
+ * period needs to be a multiple of them all. Given the restriction that the
+ * cycle times have to be multiples of one another anyway, this means the
+ * correction period can simply be the largest cycle time, hence the current
+ * choice. This way, the updates are always synchronous to the transmission
+ * cycle, and therefore predictable.
+ *
+ * The second implication is that at the beginning of a correction period, the
+ * first few deltas will be modulated in time, until the schedule engine is
+ * properly phase-aligned with the PTP clock. For this reason, you should place
+ * your best-effort traffic at the beginning of a cycle, and your
+ * time-triggered traffic afterwards.
+ *
+ * The third implication is that once the schedule engine is started, it can
+ * only adjust for so much drift within a correction period. In the servo you
+ * can only change the PTPCLKRATE, but not step the clock (PTPCLKADD). If you
+ * want to do the latter, you need to stop and restart the schedule engine,
+ * which is what the state machine handles.
+ */
+static void sja1105_tas_state_machine(struct work_struct *work)
+{
+	struct sja1105_tas_data *tas_data = work_to_sja1105_tas(work);
+	struct sja1105_private *priv = tas_to_sja1105(tas_data);
+	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
+	struct timespec64 base_time_ts, now_ts;
+	struct dsa_switch *ds = priv->ds;
+	struct timespec64 diff;
+	s64 base_time, now;
+	int rc = 0;
+
+	mutex_lock(&ptp_data->lock);
+
+	switch (tas_data->state) {
+	case SJA1105_TAS_STATE_DISABLED:
+		/* Can't do anything at all if clock is still being stepped */
+		if (tas_data->last_op != SJA1105_PTP_ADJUSTFREQ)
+			break;
+
+		rc = sja1105_tas_adjust_drift(priv, tas_data->max_cycle_time);
+		if (rc < 0)
+			break;
+
+		now = __sja1105_ptp_gettimex(ds, NULL);
+
+		/* Plan to start the earliest schedule first. The others
+		 * will be started in hardware, by way of their respective
+		 * entry points delta.
+		 * Try our best to avoid fringe cases (race condition between
+		 * ptpschtm and ptpstrtsch) by pushing the oper_base_time at
+		 * least one second in the future from now. This is not ideal,
+		 * but this only needs to buy us time until the
+		 * sja1105_tas_start command below gets executed.
+		 */
+		base_time = future_base_time(tas_data->earliest_base_time,
+					     tas_data->max_cycle_time,
+					     now + 1ull * NSEC_PER_SEC);
+		base_time -= sja1105_delta_to_ns(1);
+
+		rc = sja1105_tas_set_base_time(priv, base_time);
+		if (rc < 0)
+			break;
+
+		tas_data->oper_base_time = base_time;
+
+		rc = sja1105_tas_start(priv);
+		if (rc < 0)
+			break;
+
+		base_time_ts = ns_to_timespec64(base_time);
+		now_ts = ns_to_timespec64(now);
+
+		dev_dbg(ds->dev, "OPER base time %lld.%09ld (now %lld.%09ld)\n",
+			base_time_ts.tv_sec, base_time_ts.tv_nsec,
+			now_ts.tv_sec, now_ts.tv_nsec);
+
+		break;
+
+	case SJA1105_TAS_STATE_ENABLED_NOT_RUNNING:
+		if (tas_data->last_op != SJA1105_PTP_ADJUSTFREQ) {
+			/* Clock was stepped.. bad news for TAS */
+			sja1105_tas_stop(priv);
+			break;
+		}
+
+		/* Check if TAS has actually started, by comparing the
+		 * scheduled start time with the SJA1105 PTP clock
+		 */
+		now = __sja1105_ptp_gettimex(ds, NULL);
+
+		if (now < tas_data->oper_base_time) {
+			/* TAS has not started yet */
+			diff = ns_to_timespec64(tas_data->oper_base_time - now);
+			dev_dbg(ds->dev, "time to start: [%lld.%09ld]",
+				diff.tv_sec, diff.tv_nsec);
+			break;
+		}
+
+		/* Time elapsed, what happened? */
+		rc = sja1105_tas_check_running(priv);
+		if (rc < 0)
+			break;
+
+		if (tas_data->state != SJA1105_TAS_STATE_RUNNING)
+			/* TAS has started */
+			dev_err(ds->dev,
+				"TAS not started despite time elapsed\n");
+
+		break;
+
+	case SJA1105_TAS_STATE_RUNNING:
+		/* Clock was stepped.. bad news for TAS */
+		if (tas_data->last_op != SJA1105_PTP_ADJUSTFREQ) {
+			sja1105_tas_stop(priv);
+			break;
+		}
+
+		rc = sja1105_tas_check_running(priv);
+		if (rc < 0)
+			break;
+
+		if (tas_data->state != SJA1105_TAS_STATE_RUNNING)
+			dev_err(ds->dev, "TAS surprisingly stopped\n");
+
+		break;
+
+	default:
+		if (net_ratelimit())
+			dev_err(ds->dev, "TAS in an invalid state (incorrect use of API)!\n");
+	}
+
+	if (rc && net_ratelimit())
+		dev_err(ds->dev, "An operation returned %d\n", rc);
+
+	mutex_unlock(&ptp_data->lock);
+}
+
+void sja1105_tas_clockstep(struct dsa_switch *ds)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_tas_data *tas_data = &priv->tas_data;
+
+	if (!tas_data->enabled)
+		return;
+
+	tas_data->last_op = SJA1105_PTP_CLOCKSTEP;
+	schedule_work(&tas_data->tas_work);
+}
+
+void sja1105_tas_adjfreq(struct dsa_switch *ds)
+{
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_tas_data *tas_data = &priv->tas_data;
+
+	if (!tas_data->enabled)
+		return;
+
+	/* No reason to schedule the workqueue, nothing changed */
+	if (tas_data->state == SJA1105_TAS_STATE_RUNNING)
+		return;
+
+	tas_data->last_op = SJA1105_PTP_ADJUSTFREQ;
+	schedule_work(&tas_data->tas_work);
+}
+
 void sja1105_tas_setup(struct dsa_switch *ds)
 {
 }

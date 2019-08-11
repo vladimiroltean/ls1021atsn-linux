@@ -13,6 +13,7 @@
 #include <linux/completion.h>
 #include <linux/scatterlist.h>
 #include <linux/gpio/consumer.h>
+#include <linux/ptp_clock_kernel.h>
 
 struct dma_chan;
 struct property_entry;
@@ -409,6 +410,11 @@ static inline void spi_unregister_driver(struct spi_driver *sdrv)
  * @fw_translate_cs: If the boot firmware uses different numbering scheme
  *	what Linux expects, this optional hook can be used to translate
  *	between the two.
+ * @ptp_sts_supported: If the driver sets this to true, it must provide a
+ *	time snapshot in @spi_transfer->ptp_sts as close as possible to the
+ *	moment in time when @spi_transfer->ptp_sts_word was transmitted.
+ *	If the driver does not set this, the SPI core takes the snapshot as
+ *	close to the driver hand-over as possible.
  *
  * Each SPI controller can communicate with one or more @spi_device
  * children.  These make a small bus, sharing MOSI, MISO and SCK signals
@@ -465,6 +471,8 @@ struct spi_controller {
 #define SPI_CONTROLLER_MUST_TX		BIT(4)	/* requires tx */
 
 #define SPI_MASTER_GPIO_SS		BIT(5)	/* GPIO CS must select slave */
+
+#define SPI_CONTROLLER_SWTS_SUPPORTED	BIT(6)	/* honors xfer->ptp_sts */
 
 	/* flag indicating this is an SPI slave controller */
 	bool			slave;
@@ -604,6 +612,22 @@ struct spi_controller {
 	void			*dummy_tx;
 
 	int (*fw_translate_cs)(struct spi_controller *ctlr, unsigned cs);
+
+	/* Interrupt enable state during software timestamping */
+	unsigned long		irq_flags;
+
+	/*
+	 * Signed nanosecond correction to denote the time offset between
+	 * the hardware transmission of @ptp_sts_word and the software
+	 * timestamp. Must account for the speed of the SPI transfer.
+	 */
+	s64			swts_correction;
+
+	/*
+	 * Nanosecond value to denote the software timestamp uncertainty
+	 * due to interconnect latency when performing SPI transfer.
+	 */
+	s64			hw_delay;
 };
 
 static inline void *spi_controller_get_devdata(struct spi_controller *ctlr)
@@ -643,6 +667,12 @@ extern int spi_controller_resume(struct spi_controller *ctlr);
 extern struct spi_message *spi_get_next_queued_message(struct spi_controller *ctlr);
 extern void spi_finalize_current_message(struct spi_controller *ctlr);
 extern void spi_finalize_current_transfer(struct spi_controller *ctlr);
+
+/* Helper calls for driver to timestamp transfer */
+void spi_swts_begin(struct spi_controller *ctlr, struct spi_transfer *xfer,
+		    const void *tx);
+void spi_swts_end(struct spi_controller *ctlr, struct spi_transfer *xfer,
+		  const void *tx);
 
 /* the spi driver core manages memory for the spi_controller classdev */
 extern struct spi_controller *__spi_alloc_controller(struct device *host,
@@ -753,6 +783,20 @@ extern void spi_res_release(struct spi_controller *ctlr,
  * @transfer_list: transfers are sequenced through @spi_message.transfers
  * @tx_sg: Scatterlist for transmit, currently not for client use
  * @rx_sg: Scatterlist for receive, currently not for client use
+ * @ptp_sts_word: The word (subject to bits_per_word semantics) offset
+ *	within @tx_buf for which the SPI device is requesting a correlation
+ *	with the system time when transmitting it.
+ * @ptp_sts: Pointer to a memory location held by the SPI slave device where a
+ *	PTP system timestamp structure may lie. If drivers use PIO or their
+ *	hardware has some sort of assist for retrieving exact transfer timing,
+ *	they can (and should) assert SPI_CONTROLLER_SWTS_SUPPORTED and populate
+ *	this structure using the ptp_read_system_*ts helper functions.
+ *	The timestamp must represent the time at which the SPI slave device has
+ *	processed the word.
+ * @timestamped: Set by the SPI controller driver to denote it has acted
+ *	upon the @ptp_sts request. Not set when the SPI core has taken care of
+ *	the task. SPI device drivers are free to print a warning if this comes
+ *	back unset and they need the better resolution.
  *
  * SPI transfers always write the same number of bytes as they read.
  * Protocol drivers should always provide @rx_buf and/or @tx_buf.
@@ -841,6 +885,12 @@ struct spi_transfer {
 	u16		word_delay;
 
 	u32		effective_speed_hz;
+
+	unsigned int	ptp_sts_word;
+
+	struct ptp_system_timestamp *ptp_sts;
+
+	bool		timestamped;
 
 	struct list_head transfer_list;
 };
