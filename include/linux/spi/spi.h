@@ -13,6 +13,7 @@
 #include <linux/completion.h>
 #include <linux/scatterlist.h>
 #include <linux/gpio/consumer.h>
+#include <linux/ptp_clock_kernel.h>
 
 struct dma_chan;
 struct property_entry;
@@ -409,6 +410,12 @@ static inline void spi_unregister_driver(struct spi_driver *sdrv)
  * @fw_translate_cs: If the boot firmware uses different numbering scheme
  *	what Linux expects, this optional hook can be used to translate
  *	between the two.
+ * @ptp_sts_supported: If the driver sets this to true, it must provide a
+ *	time snapshot in @spi_transfer->ptp_sts as close as possible to the
+ *	moment in time when @spi_transfer->ptp_sts_word_pre and
+ *	@spi_transfer->ptp_sts_word_post were transmitted.
+ *	If the driver does not set this, the SPI core takes the snapshot as
+ *	close to the driver hand-over as possible.
  *
  * Each SPI controller can communicate with one or more @spi_device
  * children.  These make a small bus, sharing MOSI, MISO and SCK signals
@@ -604,6 +611,12 @@ struct spi_controller {
 	void			*dummy_tx;
 
 	int (*fw_translate_cs)(struct spi_controller *ctlr, unsigned cs);
+
+	/*
+	 * Driver sets this field to indicate it is able to snapshot SPI
+	 * transfers (needed e.g. for reading the time of POSIX clocks)
+	 */
+	bool			ptp_sts_supported;
 };
 
 static inline void *spi_controller_get_devdata(struct spi_controller *ctlr)
@@ -643,6 +656,9 @@ extern int spi_controller_resume(struct spi_controller *ctlr);
 extern struct spi_message *spi_get_next_queued_message(struct spi_controller *ctlr);
 extern void spi_finalize_current_message(struct spi_controller *ctlr);
 extern void spi_finalize_current_transfer(struct spi_controller *ctlr);
+
+/* Helper calls for driver to get which buffer pointer must be timestamped */
+extern const void *spi_xfer_ptp_sts_word(struct spi_transfer *xfer, bool pre);
 
 /* the spi driver core manages memory for the spi_controller classdev */
 extern struct spi_controller *__spi_alloc_controller(struct device *host,
@@ -753,6 +769,24 @@ extern void spi_res_release(struct spi_controller *ctlr,
  * @transfer_list: transfers are sequenced through @spi_message.transfers
  * @tx_sg: Scatterlist for transmit, currently not for client use
  * @rx_sg: Scatterlist for receive, currently not for client use
+ * @ptp_sts_word_pre: The word (subject to bits_per_word semantics) offset
+ *	within @tx_buf for which the SPI device is requesting that the time
+ *	snapshot for this transfer begins. Upon completing the SPI transfer,
+ *	this value may have changed compared to what was requested, depending
+ *	on the available snapshotting resolution (DMA transfer,
+ *	@ptp_sts_supported is false, etc).
+ * @ptp_sts_word_post: See @ptp_sts_word_post. The two can be equal (meaning
+ *	that a single byte should be snapshotted). The core will set
+ *	@ptp_sts_word_pre to 0, and @ptp_sts_word_post to the length of the
+ *	transfer, if @ptp_sts_supported is false for this controller. This is
+ *	done purposefully (instead of setting to spi_transfer->len - 1) to
+ *	denote that a transfer-level snapshot taken from within the driver may
+ *	still be of higher quality.
+ * @ptp_sts: Pointer to a memory location held by the SPI slave device where a
+ *	PTP system timestamp structure may lie. If drivers use PIO or their
+ *	hardware has some sort of assist for retrieving exact transfer timing,
+ *	they can (and should) assert @ptp_sts_supported and populate this
+ *	structure using the ptp_read_system_*ts helper functions.
  *
  * SPI transfers always write the same number of bytes as they read.
  * Protocol drivers should always provide @rx_buf and/or @tx_buf.
@@ -841,6 +875,10 @@ struct spi_transfer {
 	u16		word_delay;
 
 	u32		effective_speed_hz;
+
+	unsigned int	ptp_sts_word_pre;
+	unsigned int	ptp_sts_word_post;
+	struct ptp_system_timestamp *ptp_sts;
 
 	struct list_head transfer_list;
 };

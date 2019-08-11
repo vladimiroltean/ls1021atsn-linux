@@ -1171,6 +1171,11 @@ static int spi_transfer_one_message(struct spi_controller *ctlr,
 		spi_statistics_add_transfer_stats(statm, xfer, ctlr);
 		spi_statistics_add_transfer_stats(stats, xfer, ctlr);
 
+		if (!ctlr->ptp_sts_supported) {
+			xfer->ptp_sts_word_pre = 0;
+			ptp_read_system_prets(xfer->ptp_sts);
+		}
+
 		if (xfer->tx_buf || xfer->rx_buf) {
 			reinit_completion(&ctlr->xfer_completion);
 
@@ -1195,6 +1200,11 @@ static int spi_transfer_one_message(struct spi_controller *ctlr,
 				dev_err(&msg->spi->dev,
 					"Bufferless transfer has length %u\n",
 					xfer->len);
+		}
+
+		if (!ctlr->ptp_sts_supported) {
+			ptp_read_system_postts(xfer->ptp_sts);
+			xfer->ptp_sts_word_post = xfer->len;
 		}
 
 		trace_spi_transfer_stop(msg, xfer);
@@ -1265,6 +1275,7 @@ EXPORT_SYMBOL_GPL(spi_finalize_current_transfer);
  */
 static void __spi_pump_messages(struct spi_controller *ctlr, bool in_kthread)
 {
+	struct spi_transfer *xfer;
 	struct spi_message *mesg;
 	bool was_busy = false;
 	unsigned long flags;
@@ -1391,6 +1402,13 @@ static void __spi_pump_messages(struct spi_controller *ctlr, bool in_kthread)
 		goto out;
 	}
 
+	if (!ctlr->ptp_sts_supported) {
+		list_for_each_entry(xfer, &mesg->transfers, transfer_list) {
+			xfer->ptp_sts_word_pre = 0;
+			ptp_read_system_prets(xfer->ptp_sts);
+		}
+	}
+
 	ret = ctlr->transfer_one_message(ctlr, mesg);
 	if (ret) {
 		dev_err(&ctlr->dev,
@@ -1417,6 +1435,34 @@ static void spi_pump_messages(struct kthread_work *work)
 
 	__spi_pump_messages(ctlr, true);
 }
+
+/**
+ * spi_xfer_ptp_sts_word - helper for drivers to retrieve the pointer to the
+ *			   word in the TX buffer which must be timestamped.
+ *			   The SPI slave does not provide a pointer directly
+ *			   because the TX and RX buffers may be reallocated
+ *			   (see @spi_map_msg).
+ * @xfer: Pointer to the transfer being timestamped
+ * @pre: If true, returns the pointer to @ptp_sts_word_pre, otherwise returns
+ *	the pointer to @ptp_sts_word_post.
+ */
+const void *spi_xfer_ptp_sts_word(struct spi_transfer *xfer, bool pre)
+{
+	unsigned int bytes_per_word;
+
+	if (xfer->bits_per_word <= 8)
+		bytes_per_word = 1;
+	else if (xfer->bits_per_word <= 16)
+		bytes_per_word = 2;
+	else
+		bytes_per_word = 4;
+
+	if (pre)
+		return xfer->tx_buf + xfer->ptp_sts_word_pre * bytes_per_word;
+
+	return xfer->tx_buf + xfer->ptp_sts_word_post * bytes_per_word;
+}
+EXPORT_SYMBOL_GPL(spi_xfer_ptp_sts_word);
 
 /**
  * spi_set_thread_rt - set the controller to pump at realtime priority
@@ -1503,6 +1549,7 @@ EXPORT_SYMBOL_GPL(spi_get_next_queued_message);
  */
 void spi_finalize_current_message(struct spi_controller *ctlr)
 {
+	struct spi_transfer *xfer;
 	struct spi_message *mesg;
 	unsigned long flags;
 	int ret;
@@ -1510,6 +1557,13 @@ void spi_finalize_current_message(struct spi_controller *ctlr)
 	spin_lock_irqsave(&ctlr->queue_lock, flags);
 	mesg = ctlr->cur_msg;
 	spin_unlock_irqrestore(&ctlr->queue_lock, flags);
+
+	if (!ctlr->ptp_sts_supported) {
+		list_for_each_entry(xfer, &mesg->transfers, transfer_list) {
+			ptp_read_system_postts(xfer->ptp_sts);
+			xfer->ptp_sts_word_post = xfer->len;
+		}
+	}
 
 	spi_unmap_msg(ctlr, mesg);
 
@@ -3270,6 +3324,7 @@ static int __spi_validate(struct spi_device *spi, struct spi_message *message)
 static int __spi_async(struct spi_device *spi, struct spi_message *message)
 {
 	struct spi_controller *ctlr = spi->controller;
+	struct spi_transfer *xfer;
 
 	/*
 	 * Some controllers do not support doing regular SPI transfers. Return
@@ -3284,6 +3339,13 @@ static int __spi_async(struct spi_device *spi, struct spi_message *message)
 	SPI_STATISTICS_INCREMENT_FIELD(&spi->statistics, spi_async);
 
 	trace_spi_message_submit(message);
+
+	if (!ctlr->ptp_sts_supported) {
+		list_for_each_entry(xfer, &message->transfers, transfer_list) {
+			xfer->ptp_sts_word_pre = 0;
+			ptp_read_system_prets(xfer->ptp_sts);
+		}
+	}
 
 	return ctlr->transfer(spi, message);
 }
