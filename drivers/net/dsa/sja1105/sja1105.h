@@ -136,9 +136,11 @@ int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
 				sja1105_spi_rw_mode_t rw, u64 reg_addr,
 				void *packed_buf, size_t size_bytes);
 int sja1105_spi_send_u32(const struct sja1105_private *priv,
-			 sja1105_spi_rw_mode_t rw, u64 reg_addr, u32 *value);
+			 sja1105_spi_rw_mode_t rw, u64 reg_addr, u32 *value,
+			 struct ptp_system_timestamp *ptp_sts);
 int sja1105_spi_send_u64(const struct sja1105_private *priv,
-			 sja1105_spi_rw_mode_t rw, u64 reg_addr, u64 *value);
+			 sja1105_spi_rw_mode_t rw, u64 reg_addr, u64 *value,
+			 struct ptp_system_timestamp *ptp_sts);
 int sja1105_spi_send_long_packed_buf(const struct sja1105_private *priv,
 				     sja1105_spi_rw_mode_t rw, u64 base_addr,
 				     void *packed_buf, u64 buf_len);

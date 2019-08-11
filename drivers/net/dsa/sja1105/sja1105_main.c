@@ -1850,7 +1850,7 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 
 	mutex_lock(&priv->ptp_lock);
 
-	ticks = sja1105_ptpclkval_read(priv);
+	ticks = sja1105_ptpclkval_read(priv, NULL);
 
 	rc = sja1105_ptpegr_ts_poll(priv, slot, &ts);
 	if (rc < 0) {
@@ -2003,7 +2003,7 @@ static void sja1105_rxtstamp_work(struct work_struct *work)
 
 	mutex_lock(&priv->ptp_lock);
 
-	ticks = sja1105_ptpclkval_read(priv);
+	ticks = sja1105_ptpclkval_read(priv, NULL);
 
 	while ((skb = skb_dequeue(&data->skb_rxtstamp_queue)) != NULL) {
 		struct skb_shared_hwtstamps *shwt = skb_hwtstamps(skb);
@@ -2111,7 +2111,8 @@ static int sja1105_check_device_id(struct sja1105_private *priv)
 	u64 part_no;
 	int rc;
 
-	rc = sja1105_spi_send_u32(priv, SPI_READ, regs->device_id, &device_id);
+	rc = sja1105_spi_send_u32(priv, SPI_READ, regs->device_id, &device_id,
+				  NULL);
 	if (rc < 0)
 		return rc;
 

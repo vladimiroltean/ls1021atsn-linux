@@ -14,7 +14,8 @@
 	(SJA1105_SIZE_SPI_MSG_HEADER + SJA1105_SIZE_SPI_MSG_MAXLEN)
 
 static int sja1105_spi_transfer(const struct sja1105_private *priv,
-				const void *tx, void *rx, int size)
+				const void *tx, void *rx, int size,
+				struct ptp_system_timestamp *ptp_sts)
 {
 	struct spi_device *spi = priv->spidev;
 	struct spi_transfer transfer = {
@@ -34,11 +35,15 @@ static int sja1105_spi_transfer(const struct sja1105_private *priv,
 	spi_message_init(&msg);
 	spi_message_add_tail(&transfer, &msg);
 
+	ptp_read_system_prets(ptp_sts);
+
 	rc = spi_sync(spi, &msg);
 	if (rc < 0) {
 		dev_err(&spi->dev, "SPI transfer failed: %d\n", rc);
 		return rc;
 	}
+
+	ptp_read_system_postts(ptp_sts);
 
 	return rc;
 }
@@ -65,9 +70,11 @@ sja1105_spi_message_pack(void *buf, const struct sja1105_spi_message *msg)
  * @size_bytes is smaller than SIZE_SPI_MSG_MAXLEN. Larger packed buffers
  * are chunked in smaller pieces by sja1105_spi_send_long_packed_buf below.
  */
-int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
-				sja1105_spi_rw_mode_t rw, u64 reg_addr,
-				void *packed_buf, size_t size_bytes)
+static int
+__sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
+			      sja1105_spi_rw_mode_t rw, u64 reg_addr,
+			      void *packed_buf, size_t size_bytes,
+			      struct ptp_system_timestamp *ptp_sts)
 {
 	u8 tx_buf[SJA1105_SIZE_SPI_TRANSFER_MAX] = {0};
 	u8 rx_buf[SJA1105_SIZE_SPI_TRANSFER_MAX] = {0};
@@ -89,7 +96,7 @@ int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
 		memcpy(tx_buf + SJA1105_SIZE_SPI_MSG_HEADER,
 		       packed_buf, size_bytes);
 
-	rc = sja1105_spi_transfer(priv, tx_buf, rx_buf, msg_len);
+	rc = sja1105_spi_transfer(priv, tx_buf, rx_buf, msg_len, ptp_sts);
 	if (rc < 0)
 		return rc;
 
@@ -98,6 +105,14 @@ int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
 		       size_bytes);
 
 	return 0;
+}
+
+int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
+				sja1105_spi_rw_mode_t rw, u64 reg_addr,
+				void *packed_buf, size_t size_bytes)
+{
+	return __sja1105_spi_send_packed_buf(priv, rw, reg_addr, packed_buf,
+					     size_bytes, NULL);
 }
 
 /* If @rw is:
@@ -110,7 +125,8 @@ int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
  * CPU endianness and directly usable by software running on the core.
  */
 int sja1105_spi_send_u64(const struct sja1105_private *priv,
-			 sja1105_spi_rw_mode_t rw, u64 reg_addr, u64 *value)
+			 sja1105_spi_rw_mode_t rw, u64 reg_addr, u64 *value,
+			 struct ptp_system_timestamp *ptp_sts)
 {
 	u8 packed_buf[8];
 	int rc;
@@ -118,7 +134,8 @@ int sja1105_spi_send_u64(const struct sja1105_private *priv,
 	if (rw == SPI_WRITE)
 		sja1105_pack(packed_buf, value, 63, 0, 8);
 
-	rc = sja1105_spi_send_packed_buf(priv, rw, reg_addr, packed_buf, 8);
+	rc = __sja1105_spi_send_packed_buf(priv, rw, reg_addr, packed_buf, 8,
+					   ptp_sts);
 
 	if (rw == SPI_READ)
 		sja1105_unpack(packed_buf, value, 63, 0, 8);
@@ -128,7 +145,8 @@ int sja1105_spi_send_u64(const struct sja1105_private *priv,
 
 /* Same as above, but transfers only a 4 byte word */
 int sja1105_spi_send_u32(const struct sja1105_private *priv,
-			 sja1105_spi_rw_mode_t rw, u64 reg_addr, u32 *value)
+			 sja1105_spi_rw_mode_t rw, u64 reg_addr, u32 *value,
+			 struct ptp_system_timestamp *ptp_sts)
 {
 	u8 packed_buf[4];
 	u64 tmp;
@@ -142,7 +160,8 @@ int sja1105_spi_send_u32(const struct sja1105_private *priv,
 		sja1105_pack(packed_buf, &tmp, 31, 0, 4);
 	}
 
-	rc = sja1105_spi_send_packed_buf(priv, rw, reg_addr, packed_buf, 4);
+	rc = __sja1105_spi_send_packed_buf(priv, rw, reg_addr, packed_buf, 4,
+					   ptp_sts);
 
 	if (rw == SPI_READ) {
 		sja1105_unpack(packed_buf, &tmp, 31, 0, 4);
@@ -307,7 +326,7 @@ int sja1105_inhibit_tx(const struct sja1105_private *priv,
 	int rc;
 
 	rc = sja1105_spi_send_u32(priv, SPI_READ, regs->port_control,
-				  &inhibit_cmd);
+				  &inhibit_cmd, NULL);
 	if (rc < 0)
 		return rc;
 
@@ -317,7 +336,7 @@ int sja1105_inhibit_tx(const struct sja1105_private *priv,
 		inhibit_cmd &= ~port_bitmap;
 
 	return sja1105_spi_send_u32(priv, SPI_WRITE, regs->port_control,
-				    &inhibit_cmd);
+				    &inhibit_cmd, NULL);
 }
 
 struct sja1105_status {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019, Vladimir Oltean <olteanv@gmail.com>
  */
+#include <linux/spi/spi.h>
 #include "sja1105.h"
 
 /* The adjfine API clamps ppb between [-32,768,000, 32,768,000], and
@@ -214,15 +215,16 @@ int sja1105_ptp_reset(struct sja1105_private *priv)
 	return rc;
 }
 
-static int sja1105_ptp_gettime(struct ptp_clock_info *ptp,
-			       struct timespec64 *ts)
+static int sja1105_ptp_gettimex(struct ptp_clock_info *ptp,
+				struct timespec64 *ts,
+				struct ptp_system_timestamp *sts)
 {
 	struct sja1105_private *priv = ptp_to_sja1105(ptp);
 	u64 ticks;
 
 	mutex_lock(&priv->ptp_lock);
 
-	ticks = sja1105_ptpclkval_read(priv);
+	ticks = sja1105_ptpclkval_read(priv, sts);
 	*ts = ns_to_timespec64(sja1105_ticks_to_ns(ticks));
 
 	mutex_unlock(&priv->ptp_lock);
@@ -247,7 +249,8 @@ static int sja1105_ptpclkval_write(struct sja1105_private *priv, u64 ticks)
 {
 	const struct sja1105_regs *regs = priv->info->regs;
 
-	return sja1105_spi_send_u64(priv, SPI_WRITE, regs->ptpclk, &ticks);
+	return sja1105_spi_send_u64(priv, SPI_WRITE, regs->ptpclk, &ticks,
+				    NULL);
 }
 
 /* Write to PTPCLKVAL while PTPCLKADD is 0 */
@@ -278,6 +281,7 @@ static int sja1105_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 {
 	struct sja1105_private *priv = ptp_to_sja1105(ptp);
 	const struct sja1105_regs *regs = priv->info->regs;
+	s32 clkrate32;
 	s64 clkrate;
 	int rc;
 
@@ -286,11 +290,12 @@ static int sja1105_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 
 	/* Take a +/- value and re-center it around 2^31. */
 	clkrate = SJA1105_CC_MULT + clkrate;
-	clkrate &= GENMASK_ULL(31, 0);
+	clkrate32 = clkrate & GENMASK_ULL(31, 0);
 
 	mutex_lock(&priv->ptp_lock);
 
-	rc = sja1105_spi_send_u32(priv, SPI_WRITE, regs->ptpclkrate, &clkrate);
+	rc = sja1105_spi_send_u32(priv, SPI_WRITE, regs->ptpclkrate,
+				  &clkrate32, NULL);
 
 	mutex_unlock(&priv->ptp_lock);
 
@@ -298,13 +303,14 @@ static int sja1105_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 }
 
 /* Caller must hold priv->ptp_lock */
-u64 sja1105_ptpclkval_read(struct sja1105_private *priv)
+u64 sja1105_ptpclkval_read(struct sja1105_private *priv,
+			   struct ptp_system_timestamp *sts)
 {
 	const struct sja1105_regs *regs = priv->info->regs;
 	u64 ticks = 0;
 	int rc;
 
-	rc = sja1105_spi_send_u64(priv, SPI_READ, regs->ptpclk, &ticks);
+	rc = sja1105_spi_send_u64(priv, SPI_READ, regs->ptpclk, &ticks, sts);
 	if (rc < 0)
 		dev_err_ratelimited(priv->ds->dev,
 				    "failed to read ptp time: %d\n",
@@ -345,7 +351,7 @@ int sja1105_ptp_clock_register(struct sja1105_private *priv)
 		.name		= "SJA1105 PHC",
 		.adjfine	= sja1105_ptp_adjfine,
 		.adjtime	= sja1105_ptp_adjtime,
-		.gettime64	= sja1105_ptp_gettime,
+		.gettimex64	= sja1105_ptp_gettimex,
 		.settime64	= sja1105_ptp_settime,
 		.max_adj	= SJA1105_MAX_ADJ_PPB,
 	};

@@ -39,7 +39,8 @@ u64 sja1105_tstamp_reconstruct(struct sja1105_private *priv, u64 now,
 
 int sja1105_ptp_reset(struct sja1105_private *priv);
 
-u64 sja1105_ptpclkval_read(struct sja1105_private *priv);
+u64 sja1105_ptpclkval_read(struct sja1105_private *priv,
+			   struct ptp_system_timestamp *sts);
 
 #else
 
@@ -70,7 +71,8 @@ static inline int sja1105_ptp_reset(struct sja1105_private *priv)
 	return 0;
 }
 
-static inline u64 sja1105_ptpclkval_read(struct sja1105_private *priv)
+static inline u64 sja1105_ptpclkval_read(struct sja1105_private *priv,
+					 struct ptp_system_timestamp *sts)
 {
 	return 0;
 }
