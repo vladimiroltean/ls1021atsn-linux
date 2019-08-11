@@ -94,6 +94,7 @@ struct sja1105_private {
 	struct dsa_switch *ds;
 	struct sja1105_port ports[SJA1105_NUM_PORTS];
 	struct sja1105_ptp_cmd ptp_cmd;
+	struct ptp_system_timestamp *ptp_sts;
 	struct ptp_clock_info ptp_caps;
 	struct ptp_clock *clock;
 	/* The cycle counter translates the PTP timestamps (based on
@@ -131,7 +132,8 @@ int sja1105_spi_send_packed_buf(const struct sja1105_private *priv,
 				void *packed_buf, size_t size_bytes);
 int sja1105_spi_send_int(const struct sja1105_private *priv,
 			 sja1105_spi_rw_mode_t rw, u64 reg_addr,
-			 u64 *value, u64 size_bytes);
+			 u64 *value, u64 size_bytes,
+			 struct ptp_system_timestamp *ptp_sts);
 int sja1105_spi_send_long_packed_buf(const struct sja1105_private *priv,
 				     sja1105_spi_rw_mode_t rw, u64 base_addr,
 				     void *packed_buf, u64 buf_len);

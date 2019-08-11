@@ -2075,8 +2075,8 @@ static int sja1105_check_device_id(struct sja1105_private *priv)
 	u64 part_no;
 	int rc;
 
-	rc = sja1105_spi_send_int(priv, SPI_READ, regs->device_id,
-				  &device_id, SJA1105_SIZE_DEVICE_ID);
+	rc = sja1105_spi_send_int(priv, SPI_READ, regs->device_id, &device_id,
+				  SJA1105_SIZE_DEVICE_ID, NULL);
 	if (rc < 0)
 		return rc;
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019, Vladimir Oltean <olteanv@gmail.com>
  */
+#include <linux/spi/spi.h>
 #include "sja1105.h"
 
 /* The adjfine API clamps ppb between [-32,768,000, 32,768,000], and
@@ -232,14 +233,17 @@ int sja1105_ptp_reset(struct sja1105_private *priv)
 	return rc;
 }
 
-static int sja1105_ptp_gettime(struct ptp_clock_info *ptp,
-			       struct timespec64 *ts)
+static int sja1105_ptp_gettimex(struct ptp_clock_info *ptp,
+				struct timespec64 *ts,
+				struct ptp_system_timestamp *sts)
 {
 	struct sja1105_private *priv = ptp_to_sja1105(ptp);
 	u64 ns;
 
 	mutex_lock(&priv->ptp_lock);
+	priv->ptp_sts = sts;
 	ns = timecounter_read(&priv->tstamp_tc);
+	priv->ptp_sts = NULL;
 	mutex_unlock(&priv->ptp_lock);
 
 	*ts = ns_to_timespec64(ns);
@@ -324,7 +328,7 @@ static u64 sja1105_ptptsclk_read(const struct cyclecounter *cc)
 	int rc;
 
 	rc = sja1105_spi_send_int(priv, SPI_READ, regs->ptptsclk,
-				  &ptptsclk, 8);
+				  &ptptsclk, 8, priv->ptp_sts);
 	if (rc < 0)
 		dev_err_ratelimited(priv->ds->dev,
 				    "failed to read ptp cycle counter: %d\n",
@@ -338,7 +342,7 @@ static void sja1105_ptp_overflow_check(struct work_struct *work)
 	struct sja1105_private *priv = dw_to_sja1105(dw);
 	struct timespec64 ts;
 
-	sja1105_ptp_gettime(&priv->ptp_caps, &ts);
+	sja1105_ptp_gettimex(&priv->ptp_caps, &ts, NULL);
 
 	schedule_delayed_work(&priv->refresh_work, SJA1105_REFRESH_INTERVAL);
 }
@@ -359,7 +363,7 @@ int sja1105_ptp_clock_register(struct sja1105_private *priv)
 		.name		= "SJA1105 PHC",
 		.adjfine	= sja1105_ptp_adjfine,
 		.adjtime	= sja1105_ptp_adjtime,
-		.gettime64	= sja1105_ptp_gettime,
+		.gettimex64	= sja1105_ptp_gettimex,
 		.settime64	= sja1105_ptp_settime,
 		.max_adj	= SJA1105_MAX_ADJ_PPB,
 	};
