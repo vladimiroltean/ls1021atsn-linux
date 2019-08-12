@@ -129,7 +129,9 @@ enum dspi_trans_mode {
 struct fsl_dspi_devtype_data {
 	enum dspi_trans_mode	trans_mode;
 	u8			max_clock_factor;
+	bool			swts_supported;
 	bool			xspi_mode;
+	s64			hw_delay;
 };
 
 static const struct fsl_dspi_devtype_data vf610_data = {
@@ -140,12 +142,15 @@ static const struct fsl_dspi_devtype_data vf610_data = {
 static const struct fsl_dspi_devtype_data ls1021a_v1_data = {
 	.trans_mode		= DSPI_TCFQ_MODE,
 	.max_clock_factor	= 8,
+	.swts_supported		= true,
 	.xspi_mode		= true,
+	.hw_delay		= 50,
 };
 
 static const struct fsl_dspi_devtype_data ls2085a_data = {
 	.trans_mode		= DSPI_TCFQ_MODE,
 	.max_clock_factor	= 8,
+	.swts_supported		= true,
 };
 
 static const struct fsl_dspi_devtype_data coldfire_data = {
@@ -191,6 +196,8 @@ struct fsl_dspi {
 	u8					bits_per_word;
 	u8					bytes_per_word;
 	const struct fsl_dspi_devtype_data	*devtype_data;
+	u32					real_speed_hz;
+	u32					cs_sck_delay;
 
 	wait_queue_head_t			waitq;
 	u32					waitflags;
@@ -488,7 +495,7 @@ static void dspi_release_dma(struct fsl_dspi *dspi)
 }
 
 static void hz_to_spi_baud(char *pbr, char *br, int speed_hz,
-			   unsigned long clkrate)
+			   unsigned long clkrate, u32 *real_speed_hz)
 {
 	/* Valid baud rate pre-scaler values */
 	int pbr_tbl[4] = {2, 3, 5, 7};
@@ -522,6 +529,8 @@ static void hz_to_spi_baud(char *pbr, char *br, int speed_hz,
 		*pbr = ARRAY_SIZE(pbr_tbl) - 1;
 		*br =  ARRAY_SIZE(brs) - 1;
 	}
+
+	*real_speed_hz = clkrate / (brs[(int )*br] * pbr_tbl[(int )*pbr]);
 }
 
 static void ns_delay_scale(char *psc, char *sc, int delay_ns,
@@ -560,7 +569,12 @@ static void ns_delay_scale(char *psc, char *sc, int delay_ns,
 
 static void fifo_write(struct fsl_dspi *dspi)
 {
+	spi_swts_begin(dspi->ctlr, dspi->cur_transfer, dspi->tx);
+
 	regmap_write(dspi->regmap, SPI_PUSHR, dspi_pop_tx_pushr(dspi));
+
+	spi_swts_end(dspi->ctlr, dspi->cur_transfer,
+		     dspi->tx - dspi->bytes_per_word);
 }
 
 static void cmd_fifo_write(struct fsl_dspi *dspi)
@@ -569,7 +583,13 @@ static void cmd_fifo_write(struct fsl_dspi *dspi)
 
 	if (dspi->len > 0)
 		cmd |= SPI_PUSHR_CMD_CONT;
+
+	spi_swts_begin(dspi->ctlr, dspi->cur_transfer, dspi->tx);
+
 	regmap_write(dspi->regmap_pushr, PUSHR_CMD, cmd);
+
+	spi_swts_end(dspi->ctlr, dspi->cur_transfer,
+		     dspi->tx - dspi->bytes_per_word);
 }
 
 static void tx_fifo_write(struct fsl_dspi *dspi, u16 txdata)
@@ -654,6 +674,9 @@ static int dspi_rxtx(struct fsl_dspi *dspi)
 	u16 spi_tcnt;
 	u32 spi_tcr;
 
+	/*spi_swts_end(dspi->ctlr, dspi->cur_transfer,*/
+		     /*dspi->tx - dspi->bytes_per_word);*/
+
 	/* Get transfer counter (in number of SPI transfers). It was
 	 * reset to 0 when transfer(s) were started.
 	 */
@@ -671,6 +694,8 @@ static int dspi_rxtx(struct fsl_dspi *dspi)
 	if (!dspi->len)
 		/* Success! */
 		return 0;
+
+	/*spi_swts_begin(dspi->ctlr, dspi->cur_transfer, dspi->tx);*/
 
 	if (trans_mode == DSPI_EOQ_MODE)
 		dspi_eoq_write(dspi);
@@ -768,6 +793,11 @@ static int dspi_transfer_one_message(struct spi_controller *ctlr,
 		else
 			dspi->bytes_per_word = 4;
 
+		ctlr->swts_correction = div_s64(NSEC_PER_SEC,
+						dspi->real_speed_hz);
+		ctlr->swts_correction *= dspi->bits_per_word;
+		ctlr->swts_correction += dspi->cs_sck_delay;
+
 		regmap_update_bits(dspi->regmap, SPI_MCR,
 				   SPI_MCR_CLR_TXF | SPI_MCR_CLR_RXF,
 				   SPI_MCR_CLR_TXF | SPI_MCR_CLR_RXF);
@@ -858,9 +888,11 @@ static int dspi_setup(struct spi_device *spi)
 	}
 
 	chip->void_write_data = 0;
+	dspi->cs_sck_delay = cs_sck_delay;
 
 	clkrate = clk_get_rate(dspi->clk);
-	hz_to_spi_baud(&pbr, &br, spi->max_speed_hz, clkrate);
+	hz_to_spi_baud(&pbr, &br, spi->max_speed_hz, clkrate,
+		       &dspi->real_speed_hz);
 
 	/* Set PCS to SCK delay scale values */
 	ns_delay_scale(&pcssck, &cssck, cs_sck_delay, clkrate);
@@ -1132,6 +1164,7 @@ static int dspi_probe(struct platform_device *pdev)
 	init_waitqueue_head(&dspi->waitq);
 
 poll_mode:
+
 	if (dspi->devtype_data->trans_mode == DSPI_DMA_MODE) {
 		ret = dspi_request_dma(dspi, res->start);
 		if (ret < 0) {
@@ -1142,6 +1175,11 @@ poll_mode:
 
 	ctlr->max_speed_hz =
 		clk_get_rate(dspi->clk) / dspi->devtype_data->max_clock_factor;
+
+	if (dspi->devtype_data->swts_supported)
+		ctlr->flags |= SPI_CONTROLLER_SWTS_SUPPORTED;
+
+	ctlr->hw_delay = dspi->devtype_data->hw_delay;
 
 	platform_set_drvdata(pdev, ctlr);
 
