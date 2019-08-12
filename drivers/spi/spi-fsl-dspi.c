@@ -129,6 +129,7 @@ enum dspi_trans_mode {
 struct fsl_dspi_devtype_data {
 	enum dspi_trans_mode	trans_mode;
 	u8			max_clock_factor;
+	bool			ptp_sts_supported;
 	bool			xspi_mode;
 };
 
@@ -140,12 +141,14 @@ static const struct fsl_dspi_devtype_data vf610_data = {
 static const struct fsl_dspi_devtype_data ls1021a_v1_data = {
 	.trans_mode		= DSPI_TCFQ_MODE,
 	.max_clock_factor	= 8,
+	.ptp_sts_supported	= true,
 	.xspi_mode		= true,
 };
 
 static const struct fsl_dspi_devtype_data ls2085a_data = {
 	.trans_mode		= DSPI_TCFQ_MODE,
 	.max_clock_factor	= 8,
+	.ptp_sts_supported	= true,
 };
 
 static const struct fsl_dspi_devtype_data coldfire_data = {
@@ -179,6 +182,11 @@ struct fsl_dspi {
 	int					irq;
 	struct clk				*clk;
 
+	struct ptp_system_timestamp		*ptp_sts;
+	const void				*ptp_sts_word_pre;
+	const void				*ptp_sts_word_post;
+	bool					take_snapshot_pre;
+	bool					take_snapshot_post;
 	struct spi_transfer			*cur_transfer;
 	struct spi_message			*cur_msg;
 	struct chip_data			*cur_chip;
@@ -653,6 +661,9 @@ static int dspi_rxtx(struct fsl_dspi *dspi)
 	u16 spi_tcnt;
 	u32 spi_tcr;
 
+	if (dspi->take_snapshot_post)
+		ptp_read_system_postts(dspi->ptp_sts);
+
 	/* Get transfer counter (in number of SPI transfers). It was
 	 * reset to 0 when transfer(s) were started.
 	 */
@@ -669,6 +680,12 @@ static int dspi_rxtx(struct fsl_dspi *dspi)
 	if (!dspi->len)
 		/* Success! */
 		return 0;
+
+	dspi->take_snapshot_pre = (dspi->tx == dspi->ptp_sts_word_pre);
+	dspi->take_snapshot_post = (dspi->tx == dspi->ptp_sts_word_post);
+
+	if (dspi->take_snapshot_pre)
+		ptp_read_system_prets(dspi->ptp_sts);
 
 	if (dspi->devtype_data->trans_mode == DSPI_EOQ_MODE)
 		dspi_eoq_write(dspi);
@@ -764,6 +781,10 @@ static int dspi_transfer_one_message(struct spi_controller *ctlr,
 			dspi->bytes_per_word = 2;
 		else
 			dspi->bytes_per_word = 4;
+		dspi->ptp_sts = transfer->ptp_sts;
+		dspi->ptp_sts_word_pre = spi_xfer_ptp_sts_word(transfer, true);
+		dspi->ptp_sts_word_post = spi_xfer_ptp_sts_word(transfer,
+								false);
 
 		regmap_update_bits(dspi->regmap, SPI_MCR,
 				   SPI_MCR_CLR_TXF | SPI_MCR_CLR_RXF,
@@ -775,6 +796,11 @@ static int dspi_transfer_one_message(struct spi_controller *ctlr,
 			regmap_write(dspi->regmap, SPI_CTARE(0),
 				     SPI_FRAME_EBITS(transfer->bits_per_word) |
 				     SPI_CTARE_DTCP(1));
+
+		dspi->take_snapshot_pre = (dspi->tx == dspi->ptp_sts_word_pre);
+
+		if (dspi->take_snapshot_pre)
+			ptp_read_system_prets(dspi->ptp_sts);
 
 		trans_mode = dspi->devtype_data->trans_mode;
 		switch (trans_mode) {
@@ -1139,6 +1165,8 @@ poll_mode:
 
 	ctlr->max_speed_hz =
 		clk_get_rate(dspi->clk) / dspi->devtype_data->max_clock_factor;
+
+	ctlr->ptp_sts_supported = dspi->devtype_data->ptp_sts_supported;
 
 	platform_set_drvdata(pdev, ctlr);
 
