@@ -33,6 +33,7 @@
 };
 
 &dspi0 {
+	/delete-property/ interrupts;
 	bus-num = <0>;
 	status = "okay";
 
