@@ -182,6 +182,8 @@ struct fsl_dspi {
 	int					irq;
 	struct clk				*clk;
 
+	/* Used to disable IRQs and preemption */
+	spinlock_t				lock;
 	struct ptp_system_timestamp		*ptp_sts;
 	const void				*ptp_sts_word_pre;
 	const void				*ptp_sts_word_post;
@@ -739,6 +741,7 @@ static int dspi_transfer_one_message(struct spi_controller *ctlr,
 	struct spi_device *spi = message->spi;
 	enum dspi_trans_mode trans_mode;
 	struct spi_transfer *transfer;
+	unsigned long flags = 0;
 	int status = 0;
 
 	message->actual_length = 0;
@@ -797,6 +800,9 @@ static int dspi_transfer_one_message(struct spi_controller *ctlr,
 				     SPI_FRAME_EBITS(transfer->bits_per_word) |
 				     SPI_CTARE_DTCP(1));
 
+		if (!dspi->irq)
+			spin_lock_irqsave(&dspi->lock, flags);
+
 		dspi->take_snapshot_pre = (dspi->tx == dspi->ptp_sts_word_pre);
 
 		if (dspi->take_snapshot_pre)
@@ -829,6 +835,9 @@ static int dspi_transfer_one_message(struct spi_controller *ctlr,
 			do {
 				status = dspi_poll(dspi);
 			} while (status == -EINPROGRESS);
+
+			spin_unlock_irqrestore(&dspi->lock, flags);
+
 		} else if (trans_mode != DSPI_DMA_MODE) {
 			status = wait_event_interruptible(dspi->waitq,
 							  dspi->waitflags);
@@ -1153,6 +1162,7 @@ static int dspi_probe(struct platform_device *pdev)
 	}
 
 	init_waitqueue_head(&dspi->waitq);
+	spin_lock_init(&dspi->lock);
 
 poll_mode:
 	if (dspi->devtype_data->trans_mode == DSPI_DMA_MODE) {
