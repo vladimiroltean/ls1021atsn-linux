@@ -54,10 +54,6 @@
 #define cc_to_sja1105(d) container_of((d), struct sja1105_private, tstamp_cc)
 #define dw_to_sja1105(d) container_of((d), struct sja1105_private, refresh_work)
 
-struct sja1105_ptp_cmd {
-	u64 resptp;       /* reset */
-};
-
 int sja1105_get_ts_info(struct dsa_switch *ds, int port,
 			struct ethtool_ts_info *info)
 {
@@ -218,8 +214,8 @@ int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, u64 *ts)
 
 int sja1105_ptp_reset(struct sja1105_private *priv)
 {
+	struct sja1105_ptp_cmd cmd = priv->ptp_cmd;
 	struct dsa_switch *ds = priv->ds;
-	struct sja1105_ptp_cmd cmd = {0};
 	int rc;
 
 	mutex_lock(&priv->ptp_lock);
