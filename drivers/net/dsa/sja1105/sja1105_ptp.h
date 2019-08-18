@@ -19,6 +19,10 @@ static inline s64 sja1105_ticks_to_ns(s64 ticks)
 	return ticks * SJA1105_TICK_NS;
 }
 
+int __sja1105_ptp_adjtime(struct sja1105_private *priv, s64 delta);
+int __sja1105_ptp_settime(struct sja1105_private *priv, u64 ns,
+			  struct ptp_system_timestamp *ptp_sts);
+
 #if IS_ENABLED(CONFIG_NET_DSA_SJA1105_PTP)
 
 int sja1105_ptp_clock_register(struct sja1105_private *priv);
