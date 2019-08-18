@@ -215,17 +215,26 @@ int sja1105_ptp_reset(struct sja1105_private *priv)
 	return rc;
 }
 
+/* Caller must hold priv->ptp_lock */
+u64 __sja1105_ptp_gettimex(struct sja1105_private *priv,
+			   struct ptp_system_timestamp *sts)
+{
+	u64 ticks;
+
+	ticks = sja1105_ptpclkval_read(priv, sts);
+
+	return sja1105_ticks_to_ns(ticks);
+}
+
 static int sja1105_ptp_gettimex(struct ptp_clock_info *ptp,
 				struct timespec64 *ts,
 				struct ptp_system_timestamp *sts)
 {
 	struct sja1105_private *priv = ptp_to_sja1105(ptp);
-	u64 ticks;
 
 	mutex_lock(&priv->ptp_lock);
 
-	ticks = sja1105_ptpclkval_read(priv, sts);
-	*ts = ns_to_timespec64(sja1105_ticks_to_ns(ticks));
+	*ts = ns_to_timespec64(__sja1105_ptp_gettimex(priv, sts));
 
 	mutex_unlock(&priv->ptp_lock);
 
@@ -245,33 +254,42 @@ static int sja1105_ptp_mode_set(struct sja1105_private *priv,
 }
 
 /* Caller must hold priv->ptp_lock */
-static int sja1105_ptpclkval_write(struct sja1105_private *priv, u64 ticks)
+static int sja1105_ptpclkval_write(struct sja1105_private *priv, u64 ticks,
+				   struct ptp_system_timestamp *ptp_sts)
 {
 	const struct sja1105_regs *regs = priv->info->regs;
 
 	return sja1105_spi_send_u64(priv, SPI_WRITE, regs->ptpclk, &ticks,
-				    NULL);
+				    ptp_sts);
 }
 
 /* Write to PTPCLKVAL while PTPCLKADD is 0 */
-static int sja1105_ptp_settime(struct ptp_clock_info *ptp,
-			       const struct timespec64 *ts)
+int __sja1105_ptp_settime(struct sja1105_private *priv, u64 ns,
+			  struct ptp_system_timestamp *ptp_sts)
 {
-	u64 ticks = ns_to_sja1105_ticks(timespec64_to_ns(ts));
-	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	u64 ticks = ns_to_sja1105_ticks(ns);
 	int rc;
-
-	mutex_lock(&priv->ptp_lock);
 
 	rc = sja1105_ptp_mode_set(priv, PTP_SET_MODE);
 	if (rc < 0) {
 		dev_err(priv->ds->dev, "Failed to put PTPCLK in set mode\n");
-		goto out;
+		return rc;
 	}
 
-	rc = sja1105_ptpclkval_write(priv, ticks);
+	return sja1105_ptpclkval_write(priv, ticks, ptp_sts);
+}
 
-out:
+static int sja1105_ptp_settime(struct ptp_clock_info *ptp,
+			       const struct timespec64 *ts)
+{
+	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	u64 ns = timespec64_to_ns(ts);
+	int rc;
+
+	mutex_lock(&priv->ptp_lock);
+
+	rc = __sja1105_ptp_settime(priv, ns, NULL);
+
 	mutex_unlock(&priv->ptp_lock);
 
 	return rc;
@@ -320,23 +338,29 @@ u64 sja1105_ptpclkval_read(struct sja1105_private *priv,
 }
 
 /* Write to PTPCLKVAL while PTPCLKADD is 1 */
-static int sja1105_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
+int __sja1105_ptp_adjtime(struct sja1105_private *priv, s64 delta)
 {
-	struct sja1105_private *priv = ptp_to_sja1105(ptp);
 	s64 ticks = ns_to_sja1105_ticks(delta);
 	int rc;
-
-	mutex_lock(&priv->ptp_lock);
 
 	rc = sja1105_ptp_mode_set(priv, PTP_ADD_MODE);
 	if (rc < 0) {
 		dev_err(priv->ds->dev, "Failed to put PTPCLK in add mode\n");
-		goto out;
+		return rc;
 	}
 
-	rc = sja1105_ptpclkval_write(priv, ticks);
+	return sja1105_ptpclkval_write(priv, ticks, NULL);
+}
 
-out:
+static int sja1105_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
+{
+	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	int rc;
+
+	mutex_lock(&priv->ptp_lock);
+
+	rc = __sja1105_ptp_adjtime(priv, delta);
+
 	mutex_unlock(&priv->ptp_lock);
 
 	return rc;

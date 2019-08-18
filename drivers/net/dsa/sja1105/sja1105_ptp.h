@@ -42,6 +42,14 @@ int sja1105_ptp_reset(struct sja1105_private *priv);
 u64 sja1105_ptpclkval_read(struct sja1105_private *priv,
 			   struct ptp_system_timestamp *sts);
 
+u64 __sja1105_ptp_gettimex(struct sja1105_private *priv,
+			   struct ptp_system_timestamp *sts);
+
+int __sja1105_ptp_settime(struct sja1105_private *priv, u64 ns,
+			  struct ptp_system_timestamp *ptp_sts);
+
+int __sja1105_ptp_adjtime(struct sja1105_private *priv, s64 delta);
+
 #else
 
 static inline int sja1105_ptp_clock_register(struct sja1105_private *priv)
@@ -73,6 +81,23 @@ static inline int sja1105_ptp_reset(struct sja1105_private *priv)
 
 static inline u64 sja1105_ptpclkval_read(struct sja1105_private *priv,
 					 struct ptp_system_timestamp *sts)
+{
+	return 0;
+}
+
+static inline u64 __sja1105_ptp_gettimex(struct sja1105_private *priv,
+					 struct ptp_system_timestamp *sts)
+{
+	return 0;
+}
+
+static inline int __sja1105_ptp_settime(struct sja1105_private *priv, u64 ns,
+					struct ptp_system_timestamp *ptp_sts)
+{
+	return 0;
+}
+
+static inline int __sja1105_ptp_adjtime(struct sja1105_private *priv, s64 delta)
 {
 	return 0;
 }
