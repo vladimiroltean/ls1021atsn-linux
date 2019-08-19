@@ -1393,6 +1393,8 @@ int sja1105_static_config_reload(struct sja1105_private *priv)
 	s64 t12, t34;
 	int rc, i;
 
+	mutex_lock(&priv->mgmt_lock);
+
 	mac = priv->static_config.tables[BLK_IDX_MAC_CONFIG].entries;
 
 	/* Back up the dynamic link speed changed by sja1105_adjust_port_config
@@ -1449,6 +1451,8 @@ out_unlock_ptp:
 			goto out;
 	}
 out:
+	mutex_unlock(&priv->mgmt_lock);
+
 	return rc;
 }
 
