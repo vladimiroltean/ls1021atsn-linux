@@ -20,6 +20,11 @@
  */
 #define SJA1105_AGEING_TIME_MS(ms)	((ms) / 10)
 
+typedef enum {
+	SPI_READ = 0,
+	SPI_WRITE = 1,
+} sja1105_spi_rw_mode_t;
+
 #include "sja1105_ptp.h"
 #include "sja1105_tas.h"
 
@@ -71,7 +76,6 @@ struct sja1105_info {
 	const struct sja1105_dynamic_table_ops *dyn_ops;
 	const struct sja1105_table_ops *static_ops;
 	const struct sja1105_regs *regs;
-	int (*ptp_cmd)(const void *ctx, const void *data);
 	int (*reset_cmd)(const void *ctx, const void *data);
 	int (*setup_rgmii_delay)(const void *ctx, int port);
 	/* Prototypes from include/net/dsa.h */
@@ -79,6 +83,8 @@ struct sja1105_info {
 			   const unsigned char *addr, u16 vid);
 	int (*fdb_del_cmd)(struct dsa_switch *ds, int port,
 			   const unsigned char *addr, u16 vid);
+	void (*ptp_cmd_packing)(u8 *buf, struct sja1105_ptp_cmd *cmd,
+				enum packing_op op);
 	const char *name;
 };
 
@@ -107,11 +113,6 @@ struct sja1105_spi_message {
 	u64 read_count;
 	u64 address;
 };
-
-typedef enum {
-	SPI_READ = 0,
-	SPI_WRITE = 1,
-} sja1105_spi_rw_mode_t;
 
 /* From sja1105_main.c */
 int sja1105_static_config_reload(struct sja1105_private *priv);

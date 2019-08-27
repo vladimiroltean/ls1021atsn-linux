@@ -48,9 +48,11 @@ void sja1105_ptp_clock_unregister(struct sja1105_private *priv);
 
 int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, u64 *ts);
 
-int sja1105et_ptp_cmd(const void *ctx, const void *data);
+void sja1105et_ptp_cmd_packing(u8 *buf, struct sja1105_ptp_cmd *cmd,
+			       enum packing_op op);
 
-int sja1105pqrs_ptp_cmd(const void *ctx, const void *data);
+void sja1105pqrs_ptp_cmd_packing(u8 *buf, struct sja1105_ptp_cmd *cmd,
+				 enum packing_op op);
 
 int sja1105_get_ts_info(struct dsa_switch *ds, int port,
 			struct ethtool_ts_info *ts);
@@ -72,6 +74,8 @@ int __sja1105_ptp_settime(struct sja1105_private *priv, u64 ns,
 int __sja1105_ptp_adjtime(struct sja1105_private *priv, s64 delta);
 
 #else
+
+struct sja1105_ptp_cmd;
 
 /* Structures cannot be empty in C. Bah!
  * Keep the mutex as the only element, which is a bit more difficult to
@@ -131,9 +135,9 @@ static inline int __sja1105_ptp_adjtime(struct sja1105_private *priv, s64 delta)
 	return 0;
 }
 
-#define sja1105et_ptp_cmd NULL
+#define sja1105et_ptp_cmd_packing NULL
 
-#define sja1105pqrs_ptp_cmd NULL
+#define sja1105pqrs_ptp_cmd_packing NULL
 
 #define sja1105_get_ts_info NULL
 
