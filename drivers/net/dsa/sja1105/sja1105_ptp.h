@@ -19,7 +19,28 @@ static inline s64 sja1105_ticks_to_ns(s64 ticks)
 	return ticks * SJA1105_TICK_NS;
 }
 
+struct sja1105_private;
+
 #if IS_ENABLED(CONFIG_NET_DSA_SJA1105_PTP)
+
+enum sja1105_ptp_clk_mode {
+	PTP_ADD_MODE = 1,
+	PTP_SET_MODE = 0,
+};
+
+struct sja1105_ptp_cmd {
+	u64 resptp;		/* reset */
+	u64 corrclk4ts;		/* use the corrected clock for timestamps */
+	u64 ptpclkadd;		/* enum sja1105_ptp_clk_mode */
+};
+
+struct sja1105_ptp_data {
+	struct sja1105_ptp_cmd cmd;
+	struct ptp_clock_info caps;
+	struct ptp_clock *clock;
+	/* Serializes all operations on the PTP hardware clock */
+	struct mutex lock;
+};
 
 int sja1105_ptp_clock_register(struct sja1105_private *priv);
 
@@ -51,6 +72,14 @@ int __sja1105_ptp_settime(struct sja1105_private *priv, u64 ns,
 int __sja1105_ptp_adjtime(struct sja1105_private *priv, s64 delta);
 
 #else
+
+/* Structures cannot be empty in C. Bah!
+ * Keep the mutex as the only element, which is a bit more difficult to
+ * refactor out of sja1105_main.c anyway.
+ */
+struct sja1105_ptp_data {
+	struct mutex lock;
+};
 
 static inline int sja1105_ptp_clock_register(struct sja1105_private *priv)
 {

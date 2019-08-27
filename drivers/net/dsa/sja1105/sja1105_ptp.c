@@ -34,7 +34,10 @@
 #define SJA1105_CC_MULT_DEM		15625
 #define SJA1105_CC_MULT			0x80000000
 
-#define ptp_to_sja1105(d) container_of((d), struct sja1105_private, ptp_caps)
+#define ptp_to_sja1105_data(d) \
+		container_of((d), struct sja1105_ptp_data, caps)
+#define ptp_data_to_sja1105(d) \
+		container_of((d), struct sja1105_private, ptp_data)
 
 int sja1105_get_ts_info(struct dsa_switch *ds, int port,
 			struct ethtool_ts_info *info)
@@ -42,7 +45,7 @@ int sja1105_get_ts_info(struct dsa_switch *ds, int port,
 	struct sja1105_private *priv = ds->priv;
 
 	/* Called during cleanup */
-	if (!priv->clock)
+	if (!priv->ptp_data.clock)
 		return -ENODEV;
 
 	info->so_timestamping = SOF_TIMESTAMPING_TX_HARDWARE |
@@ -52,7 +55,7 @@ int sja1105_get_ts_info(struct dsa_switch *ds, int port,
 			 (1 << HWTSTAMP_TX_ON);
 	info->rx_filters = (1 << HWTSTAMP_FILTER_NONE) |
 			   (1 << HWTSTAMP_FILTER_PTP_V2_L2_EVENT);
-	info->phc_index = ptp_clock_index(priv->clock);
+	info->phc_index = ptp_clock_index(priv->ptp_data.clock);
 	return 0;
 }
 
@@ -200,22 +203,23 @@ int sja1105_ptpegr_ts_poll(struct sja1105_private *priv, int port, u64 *ts)
 
 int sja1105_ptp_reset(struct sja1105_private *priv)
 {
-	struct sja1105_ptp_cmd cmd = priv->ptp_cmd;
+	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
+	struct sja1105_ptp_cmd cmd = ptp_data->cmd;
 	int rc;
 
-	mutex_lock(&priv->ptp_lock);
+	mutex_lock(&ptp_data->lock);
 
 	cmd.resptp = 1;
 
 	dev_dbg(priv->ds->dev, "Resetting PTP clock\n");
 	rc = priv->info->ptp_cmd(priv, &cmd);
 
-	mutex_unlock(&priv->ptp_lock);
+	mutex_unlock(&ptp_data->lock);
 
 	return rc;
 }
 
-/* Caller must hold priv->ptp_lock */
+/* Caller must hold priv->ptp_data.lock */
 u64 __sja1105_ptp_gettimex(struct sja1105_private *priv,
 			   struct ptp_system_timestamp *sts)
 {
@@ -230,30 +234,31 @@ static int sja1105_ptp_gettimex(struct ptp_clock_info *ptp,
 				struct timespec64 *ts,
 				struct ptp_system_timestamp *sts)
 {
-	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	struct sja1105_ptp_data *ptp_data = ptp_to_sja1105_data(ptp);
+	struct sja1105_private *priv = ptp_data_to_sja1105(ptp_data);
 
-	mutex_lock(&priv->ptp_lock);
+	mutex_lock(&ptp_data->lock);
 
 	*ts = ns_to_timespec64(__sja1105_ptp_gettimex(priv, sts));
 
-	mutex_unlock(&priv->ptp_lock);
+	mutex_unlock(&ptp_data->lock);
 
 	return 0;
 }
 
-/* Caller must hold priv->ptp_lock */
+/* Caller must hold priv->ptp_data.lock */
 static int sja1105_ptp_mode_set(struct sja1105_private *priv,
 				enum sja1105_ptp_clk_mode mode)
 {
-	if (priv->ptp_cmd.ptpclkadd == mode)
+	if (priv->ptp_data.cmd.ptpclkadd == mode)
 		return 0;
 
-	priv->ptp_cmd.ptpclkadd = mode;
+	priv->ptp_data.cmd.ptpclkadd = mode;
 
-	return priv->info->ptp_cmd(priv, &priv->ptp_cmd);
+	return priv->info->ptp_cmd(priv, &priv->ptp_data.cmd);
 }
 
-/* Caller must hold priv->ptp_lock */
+/* Caller must hold priv->ptp_data.lock */
 static int sja1105_ptpclkval_write(struct sja1105_private *priv, u64 ticks,
 				   struct ptp_system_timestamp *ptp_sts)
 {
@@ -282,22 +287,24 @@ int __sja1105_ptp_settime(struct sja1105_private *priv, u64 ns,
 static int sja1105_ptp_settime(struct ptp_clock_info *ptp,
 			       const struct timespec64 *ts)
 {
-	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	struct sja1105_ptp_data *ptp_data = ptp_to_sja1105_data(ptp);
+	struct sja1105_private *priv = ptp_data_to_sja1105(ptp_data);
 	u64 ns = timespec64_to_ns(ts);
 	int rc;
 
-	mutex_lock(&priv->ptp_lock);
+	mutex_lock(&ptp_data->lock);
 
 	rc = __sja1105_ptp_settime(priv, ns, NULL);
 
-	mutex_unlock(&priv->ptp_lock);
+	mutex_unlock(&ptp_data->lock);
 
 	return rc;
 }
 
 static int sja1105_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 {
-	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	struct sja1105_ptp_data *ptp_data = ptp_to_sja1105_data(ptp);
+	struct sja1105_private *priv = ptp_data_to_sja1105(ptp_data);
 	const struct sja1105_regs *regs = priv->info->regs;
 	s32 clkrate32;
 	s64 clkrate;
@@ -310,17 +317,17 @@ static int sja1105_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 	clkrate = SJA1105_CC_MULT + clkrate;
 	clkrate32 = clkrate & GENMASK_ULL(31, 0);
 
-	mutex_lock(&priv->ptp_lock);
+	mutex_lock(&priv->ptp_data.lock);
 
 	rc = sja1105_spi_send_u32(priv, SPI_WRITE, regs->ptpclkrate,
 				  &clkrate32, NULL);
 
-	mutex_unlock(&priv->ptp_lock);
+	mutex_unlock(&priv->ptp_data.lock);
 
 	return rc;
 }
 
-/* Caller must hold priv->ptp_lock */
+/* Caller must hold priv->ptp_data.lock */
 u64 sja1105_ptpclkval_read(struct sja1105_private *priv,
 			   struct ptp_system_timestamp *sts)
 {
@@ -354,23 +361,25 @@ int __sja1105_ptp_adjtime(struct sja1105_private *priv, s64 delta)
 
 static int sja1105_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 {
-	struct sja1105_private *priv = ptp_to_sja1105(ptp);
+	struct sja1105_ptp_data *ptp_data = ptp_to_sja1105_data(ptp);
+	struct sja1105_private *priv = ptp_data_to_sja1105(ptp_data);
 	int rc;
 
-	mutex_lock(&priv->ptp_lock);
+	mutex_lock(&ptp_data->lock);
 
 	rc = __sja1105_ptp_adjtime(priv, delta);
 
-	mutex_unlock(&priv->ptp_lock);
+	mutex_unlock(&ptp_data->lock);
 
 	return rc;
 }
 
 int sja1105_ptp_clock_register(struct sja1105_private *priv)
 {
+	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
 	struct dsa_switch *ds = priv->ds;
 
-	priv->ptp_caps = (struct ptp_clock_info) {
+	ptp_data->caps = (struct ptp_clock_info) {
 		.owner		= THIS_MODULE,
 		.name		= "SJA1105 PHC",
 		.adjfine	= sja1105_ptp_adjfine,
@@ -380,23 +389,25 @@ int sja1105_ptp_clock_register(struct sja1105_private *priv)
 		.max_adj	= SJA1105_MAX_ADJ_PPB,
 	};
 
-	mutex_init(&priv->ptp_lock);
+	mutex_init(&ptp_data->lock);
 
-	priv->clock = ptp_clock_register(&priv->ptp_caps, ds->dev);
-	if (IS_ERR_OR_NULL(priv->clock))
-		return PTR_ERR(priv->clock);
+	ptp_data->clock = ptp_clock_register(&ptp_data->caps, ds->dev);
+	if (IS_ERR_OR_NULL(ptp_data->clock))
+		return PTR_ERR(ptp_data->clock);
 
-	priv->ptp_cmd.corrclk4ts = true;
-	priv->ptp_cmd.ptpclkadd = PTP_SET_MODE;
+	ptp_data->cmd.corrclk4ts = true;
+	ptp_data->cmd.ptpclkadd = PTP_SET_MODE;
 
 	return sja1105_ptp_reset(priv);
 }
 
 void sja1105_ptp_clock_unregister(struct sja1105_private *priv)
 {
-	if (IS_ERR_OR_NULL(priv->clock))
+	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
+
+	if (IS_ERR_OR_NULL(ptp_data->clock))
 		return;
 
-	ptp_clock_unregister(priv->clock);
-	priv->clock = NULL;
+	ptp_clock_unregister(ptp_data->clock);
+	ptp_data->clock = NULL;
 }

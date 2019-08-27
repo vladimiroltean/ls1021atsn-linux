@@ -1408,7 +1408,7 @@ int sja1105_static_config_reload(struct sja1105_private *priv)
 	}
 
 	/* No PTP operations can run right now */
-	mutex_lock(&priv->ptp_lock);
+	mutex_lock(&priv->ptp_data.lock);
 
 	ptpclkval = __sja1105_ptp_gettimex(priv, &ptp_sts_before);
 
@@ -1435,7 +1435,7 @@ int sja1105_static_config_reload(struct sja1105_private *priv)
 	__sja1105_ptp_adjtime(priv, ptpclkval);
 
 out_unlock_ptp:
-	mutex_unlock(&priv->ptp_lock);
+	mutex_unlock(&priv->ptp_data.lock);
 
 	/* Configure the CGU (PLLs) for MII and RMII PHYs.
 	 * For these interfaces there is no dynamic configuration
@@ -1882,7 +1882,7 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 
 	skb_shinfo(clone)->tx_flags |= SKBTX_IN_PROGRESS;
 
-	mutex_lock(&priv->ptp_lock);
+	mutex_lock(&priv->ptp_data.lock);
 
 	ticks = sja1105_ptpclkval_read(priv, NULL);
 
@@ -1899,7 +1899,7 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 	skb_complete_tx_timestamp(clone, &shwt);
 
 out_unlock_ptp:
-	mutex_unlock(&priv->ptp_lock);
+	mutex_unlock(&priv->ptp_data.lock);
 out:
 	mutex_unlock(&priv->mgmt_lock);
 	return NETDEV_TX_OK;
@@ -2035,7 +2035,7 @@ static void sja1105_rxtstamp_work(struct work_struct *work)
 	struct sk_buff *skb;
 	u64 ticks;
 
-	mutex_lock(&priv->ptp_lock);
+	mutex_lock(&priv->ptp_data.lock);
 
 	ticks = sja1105_ptpclkval_read(priv, NULL);
 
@@ -2052,7 +2052,7 @@ static void sja1105_rxtstamp_work(struct work_struct *work)
 		netif_rx_ni(skb);
 	}
 
-	mutex_unlock(&priv->ptp_lock);
+	mutex_unlock(&priv->ptp_data.lock);
 }
 
 /* Called from dsa_skb_defer_rx_timestamp */
