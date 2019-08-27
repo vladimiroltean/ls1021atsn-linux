@@ -1112,6 +1112,7 @@ int phylink_ethtool_ksettings_get(struct phylink *pl,
 	if (pl->phydev) {
 		phy_ethtool_ksettings_get(pl->phydev, kset);
 	} else {
+		kset->base.speed = SPEED_UNKNOWN;
 		kset->base.port = pl->link_port;
 	}
 
