@@ -10,12 +10,111 @@
 #define SJA1105_TAS_MAX_DELTA		BIT(19)
 #define SJA1105_GATE_MASK		GENMASK_ULL(SJA1105_NUM_TC - 1, 0)
 
+#define work_to_sja1105_tas(d) \
+	container_of((d), struct sja1105_tas_data, tas_work)
+#define tas_to_sja1105(d) \
+	container_of((d), struct sja1105_private, tas_data)
+
 /* This is not a preprocessor macro because the "ns" argument may or may not be
  * s64 at caller side. This ensures it is properly type-cast before div_s64.
  */
 static s64 ns_to_sja1105_delta(s64 ns)
 {
 	return div_s64(ns, 200);
+}
+
+static s64 sja1105_delta_to_ns(s64 delta)
+{
+	return delta * 200;
+}
+
+/* Calculate the first base_time in the future that satisfies this
+ * relationship:
+ *
+ * future_base_time = base_time + N x cycle_time >= now, or
+ *
+ *      now - base_time
+ * N >= ---------------
+ *         cycle_time
+ *
+ * Because N is an integer, the ceiling value of the above "a / b" ratio
+ * is in fact precisely the floor value of "(a + b - 1) / b", which is
+ * easier to calculate only having integer division tools.
+ */
+static s64 future_base_time(s64 base_time, s64 cycle_time, s64 now)
+{
+	s64 a, b, n;
+
+	if (base_time >= now)
+		return base_time;
+
+	a = now - base_time;
+	b = cycle_time;
+	n = div_s64(a + b - 1, b);
+
+	return base_time + n * cycle_time;
+}
+
+static int sja1105_tas_set_runtime_params(struct sja1105_private *priv)
+{
+	struct sja1105_tas_data *tas_data = &priv->tas_data;
+	struct dsa_switch *ds = priv->ds;
+	s64 earliest_base_time = S64_MAX;
+	s64 latest_base_time = 0;
+	s64 its_cycle_time = 0;
+	s64 max_cycle_time = 0;
+	int port;
+
+	tas_data->enabled = false;
+
+	for (port = 0; port < SJA1105_NUM_PORTS; port++) {
+		const struct tc_taprio_qopt_offload *offload;
+
+		offload = tas_data->offload[port];
+		if (!offload)
+			continue;
+
+		tas_data->enabled = true;
+
+		if (max_cycle_time < offload->cycle_time)
+			max_cycle_time = offload->cycle_time;
+		if (latest_base_time < offload->base_time)
+			latest_base_time = offload->base_time;
+		if (earliest_base_time > offload->base_time) {
+			earliest_base_time = offload->base_time;
+			its_cycle_time = offload->cycle_time;
+		}
+	}
+
+	if (!tas_data->enabled)
+		return 0;
+
+	/* Roll the earliest base time over until it is in a comparable
+	 * time base with the latest, then compare their deltas.
+	 * We want to enforce that all ports' base times are within
+	 * SJA1105_TAS_MAX_DELTA 200ns cycles of one another.
+	 */
+	earliest_base_time = future_base_time(earliest_base_time,
+					      its_cycle_time,
+					      latest_base_time);
+	while (earliest_base_time > latest_base_time)
+		earliest_base_time -= its_cycle_time;
+	if (latest_base_time - earliest_base_time >
+	    sja1105_delta_to_ns(SJA1105_TAS_MAX_DELTA)) {
+		dev_err(ds->dev,
+			"Base times too far apart: min %llu max %llu\n",
+			earliest_base_time, latest_base_time);
+		return -ERANGE;
+	}
+
+	tas_data->earliest_base_time = earliest_base_time;
+	tas_data->max_cycle_time = max_cycle_time;
+
+	dev_dbg(ds->dev, "earliest base time %lld ns\n", earliest_base_time);
+	dev_dbg(ds->dev, "latest base time %lld ns\n", latest_base_time);
+	dev_dbg(ds->dev, "longest cycle time %lld ns\n", max_cycle_time);
+
+	return 0;
 }
 
 /* Lo and behold: the egress scheduler from hell.
@@ -99,7 +198,11 @@ static int sja1105_init_scheduling(struct sja1105_private *priv)
 	int num_cycles = 0;
 	int cycle = 0;
 	int i, k = 0;
-	int port;
+	int port, rc;
+
+	rc = sja1105_tas_set_runtime_params(priv);
+	if (rc < 0)
+		return rc;
 
 	/* Discard previous Schedule Table */
 	table = &priv->static_config.tables[BLK_IDX_SCHEDULE];
@@ -184,11 +287,13 @@ static int sja1105_init_scheduling(struct sja1105_private *priv)
 	schedule_entry_points = table->entries;
 
 	/* Finally start populating the static config tables */
-	schedule_entry_points_params->clksrc = SJA1105_TAS_CLKSRC_STANDALONE;
+	schedule_entry_points_params->clksrc = SJA1105_TAS_CLKSRC_PTP;
 	schedule_entry_points_params->actsubsch = num_cycles - 1;
 
 	for (port = 0; port < SJA1105_NUM_PORTS; port++) {
 		const struct tc_taprio_qopt_offload *offload;
+		/* Relative base time */
+		s64 rbt;
 
 		offload = tas_data->offload[port];
 		if (!offload)
@@ -196,15 +301,21 @@ static int sja1105_init_scheduling(struct sja1105_private *priv)
 
 		schedule_start_idx = k;
 		schedule_end_idx = k + offload->num_entries - 1;
-		/* TODO this is the base time for the port's subschedule,
-		 * relative to PTPSCHTM. But as we're using the standalone
-		 * clock source and not PTP clock as time reference, there's
-		 * little point in even trying to put more logic into this,
-		 * like preserving the phases between the subschedules of
-		 * different ports. We'll get all of that when switching to the
-		 * PTP clock source.
+		/* This is the base time expressed as a number of TAS ticks
+		 * relative to PTPSCHTM, which we'll (perhaps improperly) call
+		 * the operational base time.
 		 */
-		entry_point_delta = 1;
+		rbt = future_base_time(offload->base_time,
+				       offload->cycle_time,
+				       tas_data->earliest_base_time);
+		rbt -= tas_data->earliest_base_time;
+		/* UM10944.pdf 4.2.2. Schedule Entry Points table says that
+		 * delta cannot be zero, which is shitty. Advance all relative
+		 * base times by 1 TAS delta, so that even the earliest base
+		 * time becomes 1 in relative terms. Then start the operational
+		 * base time (PTPSCHTM) one TAS delta earlier than planned.
+		 */
+		entry_point_delta = ns_to_sja1105_delta(rbt) + 1;
 
 		schedule_entry_points[cycle].subschindx = cycle;
 		schedule_entry_points[cycle].delta = entry_point_delta;
@@ -406,10 +517,11 @@ int sja1105_setup_tc_taprio(struct dsa_switch *ds, int port,
 static int sja1105_tas_check_running(struct sja1105_private *priv)
 {
 	struct sja1105_tas_data *tas_data = &priv->tas_data;
+	struct dsa_switch *ds = priv->ds;
 	struct sja1105_ptp_cmd cmd = {0};
 	int rc;
 
-	rc = sja1105_ptp_commit(priv->ds, &cmd, SPI_READ);
+	rc = sja1105_ptp_commit(ds, &cmd, SPI_READ);
 	if (rc < 0)
 		return rc;
 
@@ -689,6 +801,12 @@ void sja1105_tas_adjfreq(struct dsa_switch *ds)
 
 void sja1105_tas_setup(struct dsa_switch *ds)
 {
+	struct sja1105_private *priv = ds->priv;
+	struct sja1105_tas_data *tas_data = &priv->tas_data;
+
+	INIT_WORK(&tas_data->tas_work, sja1105_tas_state_machine);
+	tas_data->state = SJA1105_TAS_STATE_DISABLED;
+	tas_data->last_op = SJA1105_PTP_NONE;
 }
 
 void sja1105_tas_teardown(struct dsa_switch *ds)
@@ -696,6 +814,8 @@ void sja1105_tas_teardown(struct dsa_switch *ds)
 	struct sja1105_private *priv = ds->priv;
 	struct tc_taprio_qopt_offload *offload;
 	int port;
+
+	cancel_work_sync(&priv->tas_data.tas_work);
 
 	for (port = 0; port < SJA1105_NUM_PORTS; port++) {
 		offload = priv->tas_data.offload[port];
