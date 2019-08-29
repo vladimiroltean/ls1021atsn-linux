@@ -11850,6 +11850,7 @@ M:	Vladimir Oltean <olteanv@gmail.com>
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
 F:	drivers/net/dsa/sja1105
+F:	Documentation/networking/devlink-params-sja1105.txt
 
 NXP TDA998X DRM DRIVER
 M:	Russell King <linux@armlinux.org.uk>
