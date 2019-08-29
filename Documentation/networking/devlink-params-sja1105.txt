@@ -1,0 +1,9 @@
+hostprio		[DEVICE, DRIVER-SPECIFIC]
+			Configure the traffic class which will be used for
+			management (link-local) traffic injected and trapped
+			to/from the CPU. This includes STP, PTP, LLDP etc, as
+			well as hardware-specific meta frames with RX
+			timestamps.  Higher is better as long as you care about
+			your PTP frames.
+			Configuration mode: runtime
+			Type: u8. 0-7 valid.

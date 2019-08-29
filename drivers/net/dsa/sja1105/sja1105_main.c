@@ -1351,6 +1351,7 @@ static const char * const sja1105_reset_reasons[] = {
 	[SJA1105_AGEING_TIME] = "Ageing time",
 	[SJA1105_SCHEDULING] = "Time-aware scheduling",
 	[SJA1105_BEST_EFFORT_POLICING] = "Best-effort policing",
+	[SJA1105_HOSTPRIO] = "Link-local traffic class",
 };
 
 /* For situations where we need to change a setting at runtime that is only
@@ -1672,6 +1673,92 @@ static int sja1105_vlan_del(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+static int sja1105_hostprio_get(struct sja1105_private *priv, u8 *hostprio)
+{
+	struct sja1105_general_params_entry *general_params;
+	struct sja1105_table *table;
+
+	table = &priv->static_config.tables[BLK_IDX_GENERAL_PARAMS];
+	general_params = table->entries;
+	*hostprio = general_params->hostprio;
+
+	return 0;
+}
+
+static int sja1105_hostprio_set(struct sja1105_private *priv, u8 hostprio)
+{
+	struct sja1105_general_params_entry *general_params;
+	struct sja1105_table *table;
+
+	if (hostprio >= SJA1105_NUM_TC)
+		return -ERANGE;
+
+	table = &priv->static_config.tables[BLK_IDX_GENERAL_PARAMS];
+	general_params = table->entries;
+	general_params->hostprio = hostprio;
+
+	return sja1105_static_config_reload(priv, SJA1105_HOSTPRIO);
+}
+
+enum sja1105_devlink_param_id {
+	SJA1105_DEVLINK_PARAM_ID_BASE = DEVLINK_PARAM_GENERIC_ID_MAX,
+	SJA1105_DEVLINK_PARAM_ID_HOSTPRIO,
+};
+
+static int sja1105_devlink_param_get(struct dsa_switch *ds, u32 id,
+				     struct devlink_param_gset_ctx *ctx)
+{
+	struct sja1105_private *priv = ds->priv;
+	int err;
+
+	switch (id) {
+	case SJA1105_DEVLINK_PARAM_ID_HOSTPRIO:
+		err = sja1105_hostprio_get(priv, &ctx->val.vu8);
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+
+	return err;
+}
+
+static int sja1105_devlink_param_set(struct dsa_switch *ds, u32 id,
+				     struct devlink_param_gset_ctx *ctx)
+{
+	struct sja1105_private *priv = ds->priv;
+	int err;
+
+	switch (id) {
+	case SJA1105_DEVLINK_PARAM_ID_HOSTPRIO:
+		err = sja1105_hostprio_set(priv, ctx->val.vu8);
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+
+	return err;
+}
+
+static const struct devlink_param sja1105_devlink_params[] = {
+	DSA_DEVLINK_PARAM_DRIVER(SJA1105_DEVLINK_PARAM_ID_HOSTPRIO,
+				 "hostprio", DEVLINK_PARAM_TYPE_U8,
+				 BIT(DEVLINK_PARAM_CMODE_RUNTIME)),
+};
+
+static int sja1105_setup_devlink_params(struct dsa_switch *ds)
+{
+	return dsa_devlink_params_register(ds, sja1105_devlink_params,
+					   ARRAY_SIZE(sja1105_devlink_params));
+}
+
+static void sja1105_teardown_devlink_params(struct dsa_switch *ds)
+{
+	dsa_devlink_params_unregister(ds, sja1105_devlink_params,
+				      ARRAY_SIZE(sja1105_devlink_params));
+}
+
 /* The programming model for the SJA1105 switch is "all-at-once" via static
  * configuration tables. Some of these can be dynamically modified at runtime,
  * but not the xMII mode parameters table.
@@ -1735,6 +1822,10 @@ static int sja1105_setup(struct dsa_switch *ds)
 	/* Advertise the 8 egress queues */
 	ds->num_tx_queues = SJA1105_NUM_TC;
 
+	rc = sja1105_setup_devlink_params(ds);
+	if (rc < 0)
+		return rc;
+
 	/* The DSA/switchdev model brings up switch ports in standalone mode by
 	 * default, and that means vlan_filtering is 0 since they're not under
 	 * a bridge, so it's safe to set up switch tagging at this time.
@@ -1746,6 +1837,7 @@ static void sja1105_teardown(struct dsa_switch *ds)
 {
 	struct sja1105_private *priv = ds->priv;
 
+	sja1105_teardown_devlink_params(ds);
 	sja1105_tas_teardown(ds);
 	sja1105_ptp_clock_unregister(ds);
 	sja1105_static_config_free(&priv->static_config);
@@ -2051,6 +2143,8 @@ static const struct dsa_switch_ops sja1105_switch_ops = {
 	.port_setup_tc		= sja1105_port_setup_tc,
 	.port_mirror_add	= sja1105_mirror_add,
 	.port_mirror_del	= sja1105_mirror_del,
+	.devlink_param_get	= sja1105_devlink_param_get,
+	.devlink_param_set	= sja1105_devlink_param_set,
 };
 
 static int sja1105_check_device_id(struct sja1105_private *priv)
