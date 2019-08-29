@@ -181,8 +181,23 @@ towards the switch, with the VLAN PCP bits set appropriately.
 Management traffic (having DMAC 01-80-C2-xx-xx-xx or 01-19-1B-xx-xx-xx) is the
 notable exception: the switch always treats it with a fixed priority and
 disregards any VLAN PCP bits even if present. The traffic class for management
-traffic has a value of 7 (highest priority) at the moment, which is not
-configurable in the driver.
+traffic is configurable through a driver-specific devlink param called
+``hostprio``, which by default has a value of 7 (highest priority)::
+
+    devlink dev param show
+    spi/spi0.1:
+      name hostprio type driver-specific
+        values:
+          cmode runtime value 7
+
+    devlink dev param set spi/spi0.1 name hostprio value 5 cmode runtime
+    [  389.903342] sja1105 spi0.1: Reset switch and programmed static config. Reason: Link-local traffic class
+
+    devlink dev param show
+    spi/spi0.1:
+      name hostprio type driver-specific
+        values:
+          cmode runtime value 5
 
 Below is an example of configuring a 500 us cyclic schedule on egress port
 ``swp5``. The traffic class gate for management traffic (7) is open for 100 us,
