@@ -1819,7 +1819,7 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 	struct skb_shared_hwtstamps shwt = {0};
 	int slot = sp->mgmt_slot;
 	struct sk_buff *clone;
-	u64 now, ts;
+	u64 ticks, ts;
 	int rc;
 
 	/* The tragic fact about the switch having 4x2 slots for installing
@@ -1850,7 +1850,7 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 
 	mutex_lock(&priv->ptp_lock);
 
-	now = priv->tstamp_cc.read(&priv->tstamp_cc);
+	ticks = sja1105_ptpclkval_read(priv);
 
 	rc = sja1105_ptpegr_ts_poll(priv, slot, &ts);
 	if (rc < 0) {
@@ -1859,10 +1859,9 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 		goto out_unlock_ptp;
 	}
 
-	ts = sja1105_tstamp_reconstruct(priv, now, ts);
-	ts = timecounter_cyc2time(&priv->tstamp_tc, ts);
+	ts = sja1105_tstamp_reconstruct(priv, ticks, ts);
 
-	shwt.hwtstamp = ns_to_ktime(ts);
+	shwt.hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
 	skb_complete_tx_timestamp(clone, &shwt);
 
 out_unlock_ptp:
@@ -2000,11 +1999,11 @@ static void sja1105_rxtstamp_work(struct work_struct *work)
 	struct sja1105_tagger_data *data = to_tagger(work);
 	struct sja1105_private *priv = to_sja1105(data);
 	struct sk_buff *skb;
-	u64 now;
+	u64 ticks;
 
 	mutex_lock(&priv->ptp_lock);
 
-	now = priv->tstamp_cc.read(&priv->tstamp_cc);
+	ticks = sja1105_ptpclkval_read(priv);
 
 	while ((skb = skb_dequeue(&data->skb_rxtstamp_queue)) != NULL) {
 		struct skb_shared_hwtstamps *shwt = skb_hwtstamps(skb);
@@ -2013,10 +2012,9 @@ static void sja1105_rxtstamp_work(struct work_struct *work)
 		*shwt = (struct skb_shared_hwtstamps) {0};
 
 		ts = SJA1105_SKB_CB(skb)->meta_tstamp;
-		ts = sja1105_tstamp_reconstruct(priv, now, ts);
-		ts = timecounter_cyc2time(&priv->tstamp_tc, ts);
+		ts = sja1105_tstamp_reconstruct(priv, ticks, ts);
 
-		shwt->hwtstamp = ns_to_ktime(ts);
+		shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
 		netif_rx_ni(skb);
 	}
 
