@@ -19,6 +19,8 @@ static int sja1105_spi_transfer(const struct sja1105_private *priv,
 {
 	struct spi_device *spi = priv->spidev;
 	struct spi_transfer transfer = {
+		.ptp_sts = ptp_sts,
+		.ptp_sts_word = 3,
 		.tx_buf = tx,
 		.rx_buf = rx,
 		.len = size,
@@ -35,15 +37,11 @@ static int sja1105_spi_transfer(const struct sja1105_private *priv,
 	spi_message_init(&msg);
 	spi_message_add_tail(&transfer, &msg);
 
-	ptp_read_system_prets(ptp_sts);
-
 	rc = spi_sync(spi, &msg);
 	if (rc < 0) {
 		dev_err(&spi->dev, "SPI transfer failed: %d\n", rc);
 		return rc;
 	}
-
-	ptp_read_system_postts(ptp_sts);
 
 	return rc;
 }
