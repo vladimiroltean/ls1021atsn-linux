@@ -532,7 +532,6 @@ static struct sja1105_regs sja1105et_regs = {
 	.ptp_control = 0x17,
 	.ptpclk = 0x18, /* Spans 0x18 to 0x19 */
 	.ptpclkrate = 0x1A,
-	.ptptsclk = 0x1B, /* Spans 0x1B to 0x1C */
 };
 
 static struct sja1105_regs sja1105pqrs_regs = {
@@ -563,7 +562,6 @@ static struct sja1105_regs sja1105pqrs_regs = {
 	.ptp_control = 0x18,
 	.ptpclk = 0x19,
 	.ptpclkrate = 0x1B,
-	.ptptsclk = 0x1C,
 };
 
 struct sja1105_info sja1105e_info = {

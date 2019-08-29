@@ -35,7 +35,6 @@ struct sja1105_regs {
 	u64 ptp_control;
 	u64 ptpclk;
 	u64 ptpclkrate;
-	u64 ptptsclk;
 	u64 ptpegr_ts[SJA1105_NUM_PORTS];
 	u64 pad_mii_tx[SJA1105_NUM_PORTS];
 	u64 pad_mii_id[SJA1105_NUM_PORTS];
