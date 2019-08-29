@@ -181,8 +181,8 @@ towards the switch, with the VLAN PCP bits set appropriately.
 Management traffic (having DMAC 01-80-C2-xx-xx-xx or 01-19-1B-xx-xx-xx) is the
 notable exception: the switch always treats it with a fixed priority and
 disregards any VLAN PCP bits even if present. The traffic class for management
-traffic has a value of 7 (highest priority) at the moment, which is not
-configurable in the driver.
+traffic is configurable through ``CONFIG_NET_DSA_SJA1105_HOSTPRIO``, which by
+default has a value of 7 (highest priority).
 
 Below is an example of configuring a 500 us cyclic schedule on egress port
 ``swp5``. The traffic class gate for management traffic (7) is open for 100 us,
