@@ -103,11 +103,13 @@ struct sja1105_private {
 	struct spi_device *spidev;
 	struct dsa_switch *ds;
 	struct sja1105_port ports[SJA1105_NUM_PORTS];
+	/* Serializes ioctls that enable/disable RX timestamping */
+	struct mutex hwts_lock;
 	/* Serializes transmission of management frames so that
 	 * the switch doesn't confuse them with one another.
 	 */
-	struct mutex mgmt_lock;
 	struct sja1105_tagger_data tagger_data;
+	struct mutex mgmt_lock;
 	struct sja1105_ptp_data ptp_data;
 	struct sja1105_tas_data tas_data;
 };
