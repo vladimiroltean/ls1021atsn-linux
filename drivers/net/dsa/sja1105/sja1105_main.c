@@ -426,14 +426,11 @@ static int sja1105_init_general_params(struct sja1105_private *priv)
 		.tpid2 = ETH_P_SJA1105,
 	};
 	struct sja1105_table *table;
-	int i, k = 0;
+	int i;
 
-	for (i = 0; i < SJA1105_NUM_PORTS; i++) {
+	for (i = 0; i < SJA1105_NUM_PORTS; i++)
 		if (dsa_is_dsa_port(priv->ds, i))
 			default_general_params.casc_port = i;
-		else if (dsa_is_user_port(priv->ds, i))
-			priv->ports[i].mgmt_slot = k++;
-	}
 
 	table = &priv->static_config.tables[BLK_IDX_GENERAL_PARAMS];
 
@@ -1404,7 +1401,8 @@ int sja1105_static_config_reload(struct sja1105_private *priv)
 	s64 t12, t34;
 	int rc, i;
 
-	mutex_lock(&priv->mgmt_lock);
+	for (i = 0; i < SJA1105_NUM_MGMT_SLOTS; i++)
+		mutex_lock(&priv->mgmt_lock[i]);
 
 	mac = priv->static_config.tables[BLK_IDX_MAC_CONFIG].entries;
 
@@ -1462,7 +1460,8 @@ out_unlock_ptp:
 			goto out;
 	}
 out:
-	mutex_unlock(&priv->mgmt_lock);
+	for (i = 0; i < SJA1105_NUM_MGMT_SLOTS; i++)
+		mutex_unlock(&priv->mgmt_lock[i]);
 
 	return rc;
 }
@@ -1860,28 +1859,16 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 					      struct sk_buff *skb)
 {
 	struct sja1105_private *priv = ds->priv;
-	struct sja1105_port *sp = &priv->ports[port];
 	struct skb_shared_hwtstamps shwt = {0};
-	int slot = sp->mgmt_slot;
+	struct ethhdr *hdr = eth_hdr(skb);
 	struct sk_buff *clone;
 	u64 ticks, ts;
-	int rc;
+	int slot, rc;
 
-	/* The tragic fact about the switch having 4x2 slots for installing
-	 * management routes is that all of them except one are actually
-	 * useless.
-	 * If 2 slots are simultaneously configured for two BPDUs sent to the
-	 * same (multicast) DMAC but on different egress ports, the switch
-	 * would confuse them and redirect first frame it receives on the CPU
-	 * port towards the port configured on the numerically first slot
-	 * (therefore wrong port), then second received frame on second slot
-	 * (also wrong port).
-	 * So for all practical purposes, there needs to be a lock that
-	 * prevents that from happening. The slot used here is utterly useless
-	 * (could have simply been 0 just as fine), but we are doing it
-	 * nonetheless, in case a smarter idea ever comes up in the future.
-	 */
-	mutex_lock(&priv->mgmt_lock);
+	slot = sja1105et_fdb_hash(priv, hdr->h_dest, 0);
+	slot %= SJA1105_NUM_MGMT_SLOTS;
+
+	mutex_lock(&priv->mgmt_lock[slot]);
 
 	/* The clone, if there, was made by dsa_skb_tx_timestamp */
 	clone = DSA_SKB_CB(skb)->clone;
@@ -1912,7 +1899,7 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 out_unlock_ptp:
 	mutex_unlock(&priv->ptp_data.lock);
 out:
-	mutex_unlock(&priv->mgmt_lock);
+	mutex_unlock(&priv->mgmt_lock[slot]);
 	return NETDEV_TX_OK;
 }
 
@@ -2254,8 +2241,9 @@ static int sja1105_probe(struct spi_device *spi)
 		sp->dp = &ds->ports[i];
 		sp->data = tagger_data;
 	}
-	mutex_init(&priv->mgmt_lock);
 	mutex_init(&priv->hwts_lock);
+	for (i = 0; i < SJA1105_NUM_MGMT_SLOTS; i++)
+		mutex_init(&priv->mgmt_lock[i]);
 
 	sja1105_tas_setup(ds);
 

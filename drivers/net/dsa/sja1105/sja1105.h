@@ -14,6 +14,7 @@
 
 #define SJA1105_NUM_PORTS		5
 #define SJA1105_NUM_TC			8
+#define SJA1105_NUM_MGMT_SLOTS		4
 #define SJA1105ET_FDB_BIN_SIZE		4
 /* The hardware value is in multiples of 10 ms.
  * The passed parameter is in multiples of 1 ms.
@@ -105,9 +106,10 @@ struct sja1105_private {
 	struct sja1105_port ports[SJA1105_NUM_PORTS];
 	/* Serializes ioctls that enable/disable RX timestamping */
 	struct mutex hwts_lock;
-	/* Serializes transmission of management frames so that
-	 * the switch doesn't confuse them with one another.
+	/* Serializes transmission of management frames sent
+	 * at a particular link-local DMAC.
 	 */
+	struct mutex mgmt_lock[SJA1105_NUM_MGMT_SLOTS];
 	struct sja1105_tagger_data tagger_data;
 	struct mutex mgmt_lock;
 	struct sja1105_ptp_data ptp_data;
