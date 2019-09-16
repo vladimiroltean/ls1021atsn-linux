@@ -450,7 +450,6 @@ int ptp_qoriq_init(struct ptp_qoriq *ptp_qoriq, void __iomem *base,
 {
 	struct device_node *node = ptp_qoriq->dev->of_node;
 	struct ptp_qoriq_registers *regs;
-	struct timespec64 now;
 	unsigned long flags;
 	u32 tmr_ctrl;
 
@@ -506,9 +505,6 @@ int ptp_qoriq_init(struct ptp_qoriq *ptp_qoriq, void __iomem *base,
 		ptp_qoriq->regs.fiper_regs = base + FIPER_REGS_OFFSET;
 		ptp_qoriq->regs.etts_regs = base + ETTS_REGS_OFFSET;
 	}
-
-	ktime_get_real_ts64(&now);
-	ptp_qoriq_settime(&ptp_qoriq->caps, &now);
 
 	tmr_ctrl =
 	  (ptp_qoriq->tclk_period & TCLK_PERIOD_MASK) << TCLK_PERIOD_SHIFT |
