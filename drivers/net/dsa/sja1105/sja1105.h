@@ -115,7 +115,15 @@ struct sja1105_spi_message {
 };
 
 /* From sja1105_main.c */
-int sja1105_static_config_reload(struct sja1105_private *priv);
+enum sja1105_reset_reason {
+	SJA1105_VLAN_FILTERING = 0,
+	SJA1105_RX_HWTSTAMPING,
+	SJA1105_AGEING_TIME,
+	SJA1105_SCHEDULING,
+};
+
+int sja1105_static_config_reload(struct sja1105_private *priv,
+				 enum sja1105_reset_reason reason);
 
 /* From sja1105_spi.c */
 int sja1105_xfer_buf(const struct sja1105_private *priv,
