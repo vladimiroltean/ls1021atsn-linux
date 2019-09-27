@@ -1682,6 +1682,14 @@ static int sja1105_setup(struct dsa_switch *ds)
 	struct sja1105_private *priv = ds->priv;
 	int rc;
 
+	if (sizeof(struct sja1105_skb_cb) + sizeof(struct dsa_skb_cb) >= 48) {
+		dev_err(ds->dev,
+			"DSA CB size (%d) + SJA1105 CB size (%d) exceed skb block\n",
+			sizeof(struct dsa_skb_cb),
+			sizeof(struct sja1105_skb_cb));
+		return -EINVAL;
+	}
+
 	rc = sja1105_parse_dt(priv, ports);
 	if (rc < 0) {
 		dev_err(ds->dev, "Failed to parse DT: %d\n", rc);
