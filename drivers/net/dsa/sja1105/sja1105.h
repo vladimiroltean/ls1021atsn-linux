@@ -79,7 +79,7 @@ struct sja1105_info {
 	const struct sja1105_table_ops *static_ops;
 	const struct sja1105_regs *regs;
 	int (*reset_cmd)(struct dsa_switch *ds);
-	int (*setup_rgmii_delay)(const void *ctx, int port);
+	int (*setup_rgmii_delay)(struct dsa_switch *ds, int port);
 	/* Prototypes from include/net/dsa.h */
 	int (*fdb_add_cmd)(struct dsa_switch *ds, int port,
 			   const unsigned char *addr, u16 vid);
@@ -170,7 +170,7 @@ typedef enum {
 	SJA1105_SPEED_AUTO	= 0,
 } sja1105_speed_t;
 
-int sja1105pqrs_setup_rgmii_delay(const void *ctx, int port);
+int sja1105pqrs_setup_rgmii_delay(struct dsa_switch *ds, int port);
 int sja1105_clocking_setup_port(struct sja1105_private *priv, int port);
 int sja1105_clocking_setup(struct sja1105_private *priv);
 
