@@ -415,12 +415,12 @@ static u64 sja1105_rgmii_delay(u64 phase)
  * The easiest way to recover from this is to temporarily power down the TDL,
  * as it will re-lock at the new frequency afterwards.
  */
-int sja1105pqrs_setup_rgmii_delay(const void *ctx, int port)
+int sja1105pqrs_setup_rgmii_delay(struct dsa_switch *ds, int port)
 {
-	const struct sja1105_private *priv = ctx;
-	const struct sja1105_regs *regs = priv->info->regs;
 	struct sja1105_cfg_pad_mii_id pad_mii_id = {0};
 	u8 packed_buf[SJA1105_SIZE_CGU_CMD] = {0};
+	struct sja1105_private *priv = ds->priv;
+	const struct sja1105_regs *regs = priv->info->regs;
 	int rc;
 
 	if (priv->rgmii_rx_delay[port])
@@ -458,15 +458,15 @@ int sja1105pqrs_setup_rgmii_delay(const void *ctx, int port)
 static int sja1105_rgmii_clocking_setup(struct sja1105_private *priv, int port,
 					sja1105_mii_role_t role)
 {
-	struct device *dev = priv->ds->dev;
 	struct sja1105_mac_config_entry *mac;
+	struct dsa_switch *ds = priv->ds;
 	sja1105_speed_t speed;
 	int rc;
 
 	mac = priv->static_config.tables[BLK_IDX_MAC_CONFIG].entries;
 	speed = mac[port].speed;
 
-	dev_dbg(dev, "Configuring port %d RGMII at speed %dMbps\n",
+	dev_dbg(ds->dev, "Configuring port %d RGMII at speed %dMbps\n",
 		port, speed);
 
 	switch (speed) {
@@ -486,24 +486,24 @@ static int sja1105_rgmii_clocking_setup(struct sja1105_private *priv, int port,
 		/* Skip CGU configuration if there is no speed available
 		 * (e.g. link is not established yet)
 		 */
-		dev_dbg(dev, "Speed not available, skipping CGU config\n");
+		dev_dbg(ds->dev, "Speed not available, skipping CGU config\n");
 		return 0;
 	default:
 		rc = -EINVAL;
 	}
 
 	if (rc < 0) {
-		dev_err(dev, "Failed to configure idiv\n");
+		dev_err(ds->dev, "Failed to configure idiv\n");
 		return rc;
 	}
 	rc = sja1105_cgu_rgmii_tx_clk_config(priv, port, speed);
 	if (rc < 0) {
-		dev_err(dev, "Failed to configure RGMII Tx clock\n");
+		dev_err(ds->dev, "Failed to configure RGMII Tx clock\n");
 		return rc;
 	}
 	rc = sja1105_rgmii_cfg_pad_tx_config(priv, port);
 	if (rc < 0) {
-		dev_err(dev, "Failed to configure Tx pad registers\n");
+		dev_err(ds->dev, "Failed to configure Tx pad registers\n");
 		return rc;
 	}
 	if (!priv->info->setup_rgmii_delay)
@@ -515,7 +515,7 @@ static int sja1105_rgmii_clocking_setup(struct sja1105_private *priv, int port,
 	if (role == XMII_MAC)
 		return 0;
 
-	return priv->info->setup_rgmii_delay(priv, port);
+	return priv->info->setup_rgmii_delay(ds, port);
 }
 
 static int sja1105_cgu_rmii_ref_clk_config(struct sja1105_private *priv,
