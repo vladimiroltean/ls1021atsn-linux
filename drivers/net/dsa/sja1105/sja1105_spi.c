@@ -17,6 +17,12 @@ struct sja1105_chunk {
 	u64	reg_addr;
 };
 
+struct sja1105_spi_message {
+	u64 access;
+	u64 read_count;
+	u64 address;
+};
+
 static void
 sja1105_spi_message_pack(void *buf, const struct sja1105_spi_message *msg)
 {
