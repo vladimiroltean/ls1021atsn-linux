@@ -110,12 +110,6 @@ struct sja1105_private {
 
 #include "sja1105_dynamic_config.h"
 
-struct sja1105_spi_message {
-	u64 access;
-	u64 read_count;
-	u64 address;
-};
-
 /* From sja1105_main.c */
 enum sja1105_reset_reason {
 	SJA1105_VLAN_FILTERING = 0,
