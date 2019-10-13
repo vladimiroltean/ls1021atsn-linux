@@ -932,57 +932,65 @@ dsa_slave_mall_tc_entry_find(struct net_device *dev, unsigned long cookie)
 	return NULL;
 }
 
-static int dsa_slave_add_cls_matchall(struct net_device *dev,
-				      struct tc_cls_matchall_offload *cls,
-				      bool ingress)
+static int
+dsa_slave_add_cls_matchall_mirred(struct net_device *dev,
+				  struct tc_cls_matchall_offload *cls,
+				  bool ingress)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
 	struct dsa_slave_priv *p = netdev_priv(dev);
+	struct dsa_mall_mirror_tc_entry *mirror;
 	struct dsa_mall_tc_entry *mall_tc_entry;
-	__be16 protocol = cls->common.protocol;
 	struct dsa_switch *ds = dp->ds;
 	struct flow_action_entry *act;
 	struct dsa_port *to_dp;
-	int err = -EOPNOTSUPP;
+	int err;
+
+	act = &cls->rule->action.entries[0];
 
 	if (!ds->ops->port_mirror_add)
 		return err;
 
-	if (!flow_offload_has_one_action(&cls->rule->action))
+	if (!act->dev)
+		return -EINVAL;
+
+	if (!dsa_slave_dev_check(act->dev))
+		return -EOPNOTSUPP;
+
+	mall_tc_entry = kzalloc(sizeof(*mall_tc_entry), GFP_KERNEL);
+	if (!mall_tc_entry)
+		return -ENOMEM;
+
+	mall_tc_entry->cookie = cls->cookie;
+	mall_tc_entry->type = DSA_PORT_MALL_MIRROR;
+	mirror = &mall_tc_entry->mirror;
+
+	to_dp = dsa_slave_to_port(act->dev);
+
+	mirror->to_local_port = to_dp->index;
+	mirror->ingress = ingress;
+
+	err = ds->ops->port_mirror_add(ds, dp->index, mirror, ingress);
+	if (err) {
+		kfree(mall_tc_entry);
 		return err;
-
-	act = &cls->rule->action.entries[0];
-
-	if (act->id == FLOW_ACTION_MIRRED && protocol == htons(ETH_P_ALL)) {
-		struct dsa_mall_mirror_tc_entry *mirror;
-
-		if (!act->dev)
-			return -EINVAL;
-
-		if (!dsa_slave_dev_check(act->dev))
-			return -EOPNOTSUPP;
-
-		mall_tc_entry = kzalloc(sizeof(*mall_tc_entry), GFP_KERNEL);
-		if (!mall_tc_entry)
-			return -ENOMEM;
-
-		mall_tc_entry->cookie = cls->cookie;
-		mall_tc_entry->type = DSA_PORT_MALL_MIRROR;
-		mirror = &mall_tc_entry->mirror;
-
-		to_dp = dsa_slave_to_port(act->dev);
-
-		mirror->to_local_port = to_dp->index;
-		mirror->ingress = ingress;
-
-		err = ds->ops->port_mirror_add(ds, dp->index, mirror, ingress);
-		if (err) {
-			kfree(mall_tc_entry);
-			return err;
-		}
-
-		list_add_tail(&mall_tc_entry->list, &p->mall_tc_list);
 	}
+
+	list_add_tail(&mall_tc_entry->list, &p->mall_tc_list);
+
+	return err;
+}
+
+static int dsa_slave_add_cls_matchall(struct net_device *dev,
+				      struct tc_cls_matchall_offload *cls,
+				      bool ingress)
+{
+	int err = -EOPNOTSUPP;
+
+	if (cls->common.protocol == htons(ETH_P_ALL) &&
+	    flow_offload_has_one_action(&cls->rule->action) &&
+	    cls->rule->action.entries[0].id == FLOW_ACTION_MIRRED)
+		err = dsa_slave_add_cls_matchall_mirred(dev, cls, ingress);
 
 	return 0;
 }
