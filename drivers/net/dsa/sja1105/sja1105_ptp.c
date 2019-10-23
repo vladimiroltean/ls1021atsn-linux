@@ -101,6 +101,8 @@ static int sja1105_change_rxtstamping(struct sja1105_private *priv,
 		kfree_skb(priv->tagger_data.stampable_skb);
 		priv->tagger_data.stampable_skb = NULL;
 	}
+	cancel_work_sync(&priv->tagger_data.rxtstamp_work);
+	skb_queue_purge(&priv->tagger_data.skb_rxtstamp_queue);
 
 	return sja1105_static_config_reload(priv, SJA1105_RX_HWTSTAMPING);
 }
