@@ -115,9 +115,12 @@ static int dsa_slave_close(struct net_device *dev)
 {
 	struct net_device *master = dsa_slave_to_master(dev);
 	struct dsa_port *dp = dsa_slave_to_port(dev);
+	struct dsa_switch *ds = dp->ds;
 
-	cancel_work_sync(&dp->xmit_work);
-	skb_queue_purge(&dp->xmit_queue);
+	if (ds->ops->port_deferred_xmit) {
+		kthread_cancel_work_sync(&dp->xmit_work);
+		skb_queue_purge(&dp->xmit_queue);
+	}
 
 	phylink_stop(dp->pl);
 
@@ -600,12 +603,13 @@ void *dsa_defer_xmit(struct sk_buff *skb, struct net_device *dev)
 	DSA_SKB_CB(skb)->deferred_xmit = true;
 
 	skb_queue_tail(&dp->xmit_queue, skb);
-	schedule_work(&dp->xmit_work);
+	kthread_queue_work(dp->xmit_worker, &dp->xmit_work);
+
 	return NULL;
 }
 EXPORT_SYMBOL_GPL(dsa_defer_xmit);
 
-static void dsa_port_xmit_work(struct work_struct *work)
+static void dsa_port_xmit_work(struct kthread_work *work)
 {
 	struct dsa_port *dp = container_of(work, struct dsa_port, xmit_work);
 	struct dsa_switch *ds = dp->ds;
@@ -1426,12 +1430,15 @@ static int dsa_slave_phy_setup(struct net_device *slave_dev)
 int dsa_slave_suspend(struct net_device *slave_dev)
 {
 	struct dsa_port *dp = dsa_slave_to_port(slave_dev);
+	struct dsa_switch *ds = dp->ds;
 
 	if (!netif_running(slave_dev))
 		return 0;
 
-	cancel_work_sync(&dp->xmit_work);
-	skb_queue_purge(&dp->xmit_queue);
+	if (ds->ops->port_deferred_xmit) {
+		kthread_cancel_work_sync(&dp->xmit_work);
+		skb_queue_purge(&dp->xmit_queue);
+	}
 
 	netif_device_detach(slave_dev);
 
@@ -1521,8 +1528,6 @@ int dsa_slave_create(struct dsa_port *port)
 	}
 	p->dp = port;
 	INIT_LIST_HEAD(&p->mall_tc_list);
-	INIT_WORK(&port->xmit_work, dsa_port_xmit_work);
-	skb_queue_head_init(&port->xmit_queue);
 	p->xmit = cpu_dp->tag_ops->xmit;
 	port->slave = slave_dev;
 
@@ -1530,12 +1535,26 @@ int dsa_slave_create(struct dsa_port *port)
 	dsa_slave_change_mtu(slave_dev, ETH_DATA_LEN);
 	rtnl_unlock();
 
+	if (ds->ops->port_deferred_xmit) {
+		kthread_init_work(&port->xmit_work, dsa_port_xmit_work);
+		port->xmit_worker = kthread_create_worker(0, "dsa_%s_xmit",
+							  slave_dev->name);
+		if (IS_ERR(port->xmit_worker)) {
+			ret = PTR_ERR(port->xmit_worker);
+			netdev_err(master,
+				   "failed to create deferred xmit thread: %d\n",
+				   ret);
+			goto out_free;
+		}
+		skb_queue_head_init(&port->xmit_queue);
+	}
+
 	netif_carrier_off(slave_dev);
 
 	ret = dsa_slave_phy_setup(slave_dev);
 	if (ret) {
 		netdev_err(master, "error %d setting up slave phy\n", ret);
-		goto out_free;
+		goto out_destroy;
 	}
 
 	dsa_slave_notify(slave_dev, DSA_PORT_REGISTER);
@@ -1554,6 +1573,9 @@ out_phy:
 	phylink_disconnect_phy(p->dp->pl);
 	rtnl_unlock();
 	phylink_destroy(p->dp->pl);
+out_destroy:
+	if (ds->ops->port_deferred_xmit)
+		kthread_destroy_worker(port->xmit_worker);
 out_free:
 	free_percpu(p->stats64);
 	free_netdev(slave_dev);
@@ -1565,6 +1587,10 @@ void dsa_slave_destroy(struct net_device *slave_dev)
 {
 	struct dsa_port *dp = dsa_slave_to_port(slave_dev);
 	struct dsa_slave_priv *p = netdev_priv(slave_dev);
+	struct dsa_switch *ds = dp->ds;
+
+	if (ds->ops->port_deferred_xmit)
+		kthread_destroy_worker(dp->xmit_worker);
 
 	netif_carrier_off(slave_dev);
 	rtnl_lock();
