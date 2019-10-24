@@ -190,7 +190,8 @@ struct dsa_port {
 	struct phylink		*pl;
 	struct phylink_config	pl_config;
 
-	struct work_struct	xmit_work;
+	struct kthread_worker	*xmit_worker;
+	struct kthread_work	xmit_work;
 	struct sk_buff_head	xmit_queue;
 
 	struct list_head list;
