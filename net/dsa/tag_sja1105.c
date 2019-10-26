@@ -171,10 +171,14 @@ static struct sk_buff
 		 * that we were expecting?
 		 */
 		if (sp->data->stampable_skb) {
+			u8 dmac[ETH_ALEN];
+
+			u64_to_ether_addr(SJA1105_META_DMAC, dmac);
+
 			dev_err_ratelimited(dp->ds->dev,
-					    "Expected meta frame, is %12llx "
+					    "Expected meta frame, is %pM "
 					    "in the DSA master multicast filter?\n",
-					    SJA1105_META_DMAC);
+					    dmac);
 			skb_to_free = sp->data->stampable_skb;
 		}
 
