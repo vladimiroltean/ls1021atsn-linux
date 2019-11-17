@@ -52,4 +52,6 @@ struct sja1105_port {
 	int mgmt_slot;
 };
 
+bool sja1105_can_use_vlan_as_tags(struct dsa_port *dp);
+
 #endif /* _NET_DSA_SJA1105_H */
