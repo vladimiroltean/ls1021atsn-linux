@@ -17,6 +17,8 @@ struct packet_type;
 int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int index,
 				 bool enabled);
 
+int dsa_8021q_vid_validate(struct dsa_switch *ds, int port, u16 vid, u16 flags);
+
 u16 dsa_8021q_tx_vid(struct dsa_switch *ds, int port);
 
 u16 dsa_8021q_rx_vid(struct dsa_switch *ds, int port);
@@ -29,6 +31,11 @@ int dsa_8021q_rx_source_port(u16 vid);
 
 int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int index,
 				 bool enabled)
+{
+	return 0;
+}
+
+int dsa_8021q_vid_validate(struct dsa_switch *ds, int port, u16 vid, u16 flags)
 {
 	return 0;
 }

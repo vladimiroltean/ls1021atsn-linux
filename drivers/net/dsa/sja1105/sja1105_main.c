@@ -219,7 +219,7 @@ static int sja1105_init_l2_lookup_params(struct sja1105_private *priv)
 		/* This selects between Independent VLAN Learning (IVL) and
 		 * Shared VLAN Learning (SVL)
 		 */
-		.shared_learn = true,
+		.shared_learn = false,
 		/* Don't discard management traffic based on ENFPORT -
 		 * we don't perform SMAC port enforcement anyway, so
 		 * what we are setting here doesn't matter.
@@ -294,6 +294,8 @@ static int sja1105_init_static_vlan(struct sja1105_private *priv)
 	 * forwarding; always transmit priority-tagged frames as untagged.
 	 */
 	for (i = 0; i < SJA1105_NUM_PORTS; i++) {
+		if (dsa_is_cpu_port(priv->ds, i))
+			continue;
 		pvid.vmemb_port |= BIT(i);
 		pvid.vlan_bc |= BIT(i);
 		pvid.tag_port &= ~BIT(i);
@@ -354,7 +356,8 @@ static int sja1105_init_l2_forwarding_params(struct sja1105_private *priv)
 		/* Disallow dynamic reconfiguration of vlan_pmap */
 		.max_dynp = 0,
 		/* Use a single memory partition for all ingress queues */
-		.part_spc = { SJA1105_MAX_FRAME_MEMORY, 0, 0, 0, 0, 0, 0, 0 },
+		.part_spc = { SJA1105_MAX_FRAME_MEMORY_RETAGGING,
+			      0, 0, 0, 0, 0, 0, 0 },
 	};
 	struct sja1105_table *table;
 
@@ -498,6 +501,65 @@ static int sja1105_init_l2_policing(struct sja1105_private *priv)
 	return 0;
 }
 
+/* Adds a retagging entry which specifies that frames received on @port which
+ * are tagged with @vid will be retagged with the dsa_8021q VLAN towards the
+ * CPU.
+ */
+static void
+sja1105_populate_retagging_entry(struct sja1105_private *priv,
+				 struct sja1105_retagging_entry *retagging,
+				 int port, u16 vid)
+{
+	int cpu = dsa_to_port(priv->ds, port)->cpu_dp->index;
+	u16 rx_vid = dsa_8021q_rx_vid(priv->ds, port);
+
+	retagging->egr_port = BIT(cpu);
+	retagging->ing_port |= BIT(port);
+	retagging->vlan_ing = vid;
+	retagging->vlan_egr = rx_vid;
+	retagging->do_not_learn = false;
+	retagging->use_dest_ports = false;
+	retagging->destports = BIT(cpu);
+	dev_err(priv->ds->dev, "retagging egr_port 0x%llx ing_port 0x%llx vlan_ing %lld vlan_egr %lld\n",
+		retagging->egr_port, retagging->ing_port, retagging->vlan_ing, retagging->vlan_egr);
+}
+
+static int sja1105_init_retagging(struct sja1105_private *priv)
+{
+	struct sja1105_retagging_entry *retagging;
+	struct sja1105_table *table;
+	const u16 pvid = 1;
+	int port, k;
+
+	table = &priv->static_config.tables[BLK_IDX_RETAGGING];
+	retagging = table->entries;
+
+	/* Discard previous Retagging Table */
+	if (table->entry_count) {
+		kfree(table->entries);
+		table->entry_count = 0;
+	}
+
+	table->entries = kcalloc(SJA1105_NUM_PORTS - 1,
+				 table->ops->unpacked_entry_size, GFP_KERNEL);
+	if (!table->entries)
+		return -ENOMEM;
+
+	table->entry_count = SJA1105_NUM_PORTS - 1;
+
+	retagging = table->entries;
+
+	for (port = 0, k = 0; port < SJA1105_NUM_PORTS; port++) {
+		if (!dsa_is_user_port(priv->ds, port))
+			continue;
+
+		sja1105_populate_retagging_entry(priv, &retagging[k++],
+						 port, pvid);
+	}
+
+	return 0;
+}
+
 static int sja1105_static_config_load(struct sja1105_private *priv,
 				      struct sja1105_dt_port *ports)
 {
@@ -536,6 +598,9 @@ static int sja1105_static_config_load(struct sja1105_private *priv,
 	if (rc < 0)
 		return rc;
 	rc = sja1105_init_general_params(priv);
+	if (rc < 0)
+		return rc;
+	rc = sja1105_init_retagging(priv);
 	if (rc < 0)
 		return rc;
 
@@ -1428,16 +1493,109 @@ out:
 	return rc;
 }
 
+static int sja1105_find_retagging_entry(struct sja1105_private *priv,
+					int port, u16 vid)
+{
+	struct sja1105_retagging_entry *retagging;
+	struct sja1105_table *table;
+	int i;
+
+	table = &priv->static_config.tables[BLK_IDX_RETAGGING];
+	retagging = table->entries;
+
+	for (i = 0; i < table->entry_count; i++)
+		if ((retagging[i].ing_port & BIT(port)) &&
+		    (retagging[i].vlan_ing == vid))
+			return i;
+
+	return -1;
+}
+
+static int sja1105_retagging_apply(struct sja1105_private *priv, int port,
+				   u16 vid, bool keep)
+{
+	struct sja1105_retagging_entry *retagging;
+	struct sja1105_table *table;
+	int rc, match;
+
+	table = &priv->static_config.tables[BLK_IDX_RETAGGING];
+
+	match = sja1105_find_retagging_entry(priv, port, vid);
+	if (match < 0) {
+		/* Can't delete a missing entry. */
+		if (!keep) {
+			dev_err(priv->ds->dev, "can't delete a missing entry\n");
+			return 0;
+		}
+
+		/* No match => new entry */
+		rc = sja1105_table_resize(table, table->entry_count + 1);
+		if (rc) {
+			dev_err(priv->ds->dev, "failed to resize\n");
+			return rc;
+		}
+
+		match = table->entry_count - 1;
+	}
+
+	/* Assign pointer after the resize (it may be new memory) */
+	retagging = table->entries;
+
+	if (keep) {
+		sja1105_populate_retagging_entry(priv, &retagging[match],
+						 port, vid);
+
+		return sja1105_dynamic_config_write(priv, BLK_IDX_RETAGGING,
+						    match, &retagging[match],
+						    true);
+	}
+
+	retagging[match].ing_port &= BIT(port);
+
+	if (!retagging[match].ing_port) {
+		/* To remove, the strategy is to overwrite the element with
+		 * the last one, and then reduce the array size by 1
+		 */
+		retagging[match] = retagging[table->entry_count - 1];
+		rc = sja1105_table_resize(table, table->entry_count - 1);
+		if (rc)
+			return rc;
+
+		rc = sja1105_dynamic_config_write(priv, BLK_IDX_RETAGGING,
+						  table->entry_count,
+						  NULL, false);
+		if (rc)
+			return rc;
+	}
+
+	return sja1105_dynamic_config_write(priv, BLK_IDX_RETAGGING, match,
+					    &retagging[match], true);
+}
+
 static int sja1105_pvid_apply(struct sja1105_private *priv, int port, u16 pvid)
 {
 	struct sja1105_mac_config_entry *mac;
+	u16 old_pvid;
+	int rc;
 
 	mac = priv->static_config.tables[BLK_IDX_MAC_CONFIG].entries;
 
+	old_pvid = mac[port].vlanid;
 	mac[port].vlanid = pvid;
 
-	return sja1105_dynamic_config_write(priv, BLK_IDX_MAC_CONFIG, port,
-					   &mac[port], true);
+	if (old_pvid == pvid)
+		return 0;
+
+	rc = sja1105_dynamic_config_write(priv, BLK_IDX_MAC_CONFIG, port,
+					  &mac[port], true);
+	if (rc < 0)
+		return rc;
+
+	rc = sja1105_retagging_apply(priv, port, old_pvid, false);
+	if (rc < 0)
+		return rc;
+
+	return sja1105_retagging_apply(priv, port, pvid, true);
 }
 
 static int sja1105_is_vlan_configured(struct sja1105_private *priv, u16 vid)
@@ -1518,15 +1676,38 @@ static int sja1105_vlan_apply(struct sja1105_private *priv, int port, u16 vid,
 
 static int sja1105_setup_8021q_tagging(struct dsa_switch *ds, bool enabled)
 {
-	int rc, i;
+	struct sja1105_private *priv = ds->priv;
+	int rc, port;
 
-	for (i = 0; i < SJA1105_NUM_PORTS; i++) {
-		rc = dsa_port_setup_8021q_tagging(ds, i, enabled);
-		if (rc < 0) {
-			dev_err(ds->dev, "Failed to setup VLAN tagging for port %d: %d\n",
-				i, rc);
+
+	for (port = 0; port < SJA1105_NUM_PORTS; port++) {
+		u16 rx_vid = dsa_8021q_rx_vid(ds, port);
+		u16 tx_vid = dsa_8021q_tx_vid(ds, port);
+		int cpu;
+		int i;
+
+		if (!dsa_is_user_port(ds, port))
+			continue;
+
+		cpu = dsa_to_port(ds, port)->cpu_dp->index;
+
+		for (i = 0; i < 5; i++) {
+		rc = sja1105_vlan_apply(priv, i /*port*/, rx_vid, enabled, true);
+		if (rc < 0)
 			return rc;
 		}
+
+		rc = sja1105_vlan_apply(priv, cpu, rx_vid, enabled, false);
+		if (rc < 0)
+			return rc;
+
+		rc = sja1105_vlan_apply(priv, port, tx_vid, enabled, true);
+		if (rc < 0)
+			return rc;
+
+		rc = sja1105_vlan_apply(priv, cpu, tx_vid, enabled, false);
+		if (rc < 0)
+			return rc;
 	}
 	dev_info(ds->dev, "%s switch tagging\n",
 		 enabled ? "Enabled" : "Disabled");
@@ -1553,12 +1734,10 @@ static int sja1105_vlan_prepare(struct dsa_switch *ds, int port,
  */
 static int sja1105_vlan_filtering(struct dsa_switch *ds, int port, bool enabled)
 {
-	struct sja1105_l2_lookup_params_entry *l2_lookup_params;
 	struct sja1105_general_params_entry *general_params;
 	struct sja1105_private *priv = ds->priv;
 	struct sja1105_table *table;
 	u16 tpid, tpid2;
-	int rc;
 
 	if (enabled) {
 		/* Enable VLAN filtering. */
@@ -1582,37 +1761,7 @@ static int sja1105_vlan_filtering(struct dsa_switch *ds, int port, bool enabled)
 	general_params->incl_srcpt1 = enabled;
 	general_params->incl_srcpt0 = enabled;
 
-	/* VLAN filtering => independent VLAN learning.
-	 * No VLAN filtering => shared VLAN learning.
-	 *
-	 * In shared VLAN learning mode, untagged traffic still gets
-	 * pvid-tagged, and the FDB table gets populated with entries
-	 * containing the "real" (pvid or from VLAN tag) VLAN ID.
-	 * However the switch performs a masked L2 lookup in the FDB,
-	 * effectively only looking up a frame's DMAC (and not VID) for the
-	 * forwarding decision.
-	 *
-	 * This is extremely convenient for us, because in modes with
-	 * vlan_filtering=0, dsa_8021q actually installs unique pvid's into
-	 * each front panel port. This is good for identification but breaks
-	 * learning badly - the VID of the learnt FDB entry is unique, aka
-	 * no frames coming from any other port are going to have it. So
-	 * for forwarding purposes, this is as though learning was broken
-	 * (all frames get flooded).
-	 */
-	table = &priv->static_config.tables[BLK_IDX_L2_LOOKUP_PARAMS];
-	l2_lookup_params = table->entries;
-	l2_lookup_params->shared_learn = !enabled;
-
-	rc = sja1105_static_config_reload(priv, SJA1105_VLAN_FILTERING);
-	if (rc)
-		dev_err(ds->dev, "Failed to change VLAN Ethertype\n");
-
-	/* Switch port identification based on 802.1Q is only passable
-	 * if we are not under a vlan_filtering bridge. So make sure
-	 * the two configurations are mutually exclusive.
-	 */
-	return sja1105_setup_8021q_tagging(ds, !enabled);
+	return sja1105_static_config_reload(priv, SJA1105_VLAN_FILTERING);
 }
 
 static void sja1105_vlan_add(struct dsa_switch *ds, int port,

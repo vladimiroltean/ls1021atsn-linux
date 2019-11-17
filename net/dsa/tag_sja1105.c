@@ -69,20 +69,6 @@ static inline bool sja1105_is_meta_frame(const struct sk_buff *skb)
 	return true;
 }
 
-/* This is the first time the tagger sees the frame on RX.
- * Figure out if we can decode it.
- */
-static bool sja1105_filter(const struct sk_buff *skb, struct net_device *dev)
-{
-	if (!dsa_port_is_vlan_filtering(dev->dsa_ptr))
-		return true;
-	if (sja1105_is_link_local(skb))
-		return true;
-	if (sja1105_is_meta_frame(skb))
-		return true;
-	return false;
-}
-
 /* Calls sja1105_port_deferred_xmit in sja1105_main.c */
 static struct sk_buff *sja1105_defer_xmit(struct sja1105_port *sp,
 					  struct sk_buff *skb)
@@ -104,7 +90,7 @@ static struct sk_buff *sja1105_xmit(struct sk_buff *skb,
 	u16 queue_mapping = skb_get_queue_mapping(skb);
 	u8 pcp = netdev_txq_to_tc(netdev, queue_mapping);
 	u16 tci = (pcp << VLAN_PRIO_SHIFT) | tx_vid;
-	u16 tpid = ETH_P_SJA1105;
+	u16 tpid;
 
 	/* Transmitting management traffic does not rely upon switch tagging,
 	 * but instead SPI-installed management routes. Part 2 of this
@@ -113,13 +99,10 @@ static struct sk_buff *sja1105_xmit(struct sk_buff *skb,
 	if (unlikely(sja1105_is_link_local(skb)))
 		return sja1105_defer_xmit(dp->priv, skb);
 
-	/* If we are under a vlan_filtering bridge, IP termination on
-	 * switch ports based on 802.1Q tags is simply too brittle to
-	 * be passable. So just defer to the dsa_slave_notag_xmit
-	 * implementation.
-	 */
 	if (dsa_port_is_vlan_filtering(dp))
-		return skb;
+		tpid = ETH_P_8021Q;
+	else
+		tpid = ETH_P_SJA1105;
 
 	/* skb->data points at skb_mac_header, which
 	 * is fine for vlan_insert_tag.
@@ -252,6 +235,7 @@ static struct sk_buff *sja1105_rcv(struct sk_buff *skb,
 				   struct net_device *netdev,
 				   struct packet_type *pt)
 {
+	struct dsa_port *cpu_dp = netdev->dsa_ptr;
 	struct sja1105_meta meta = {0};
 	int source_port, switch_id;
 	struct ethhdr *hdr;
@@ -262,9 +246,12 @@ static struct sk_buff *sja1105_rcv(struct sk_buff *skb,
 
 	hdr = eth_hdr(skb);
 	tpid = ntohs(hdr->h_proto);
-	is_tagged = (tpid == ETH_P_SJA1105);
 	is_link_local = sja1105_is_link_local(skb);
 	is_meta = sja1105_is_meta_frame(skb);
+	if (dsa_port_is_vlan_filtering(cpu_dp))
+		is_tagged = (tpid == ETH_P_8021Q);
+	else
+		is_tagged = (tpid == ETH_P_SJA1105);
 
 	skb->offload_fwd_mark = 1;
 
@@ -313,7 +300,6 @@ static struct dsa_device_ops sja1105_netdev_ops = {
 	.proto = DSA_TAG_PROTO_SJA1105,
 	.xmit = sja1105_xmit,
 	.rcv = sja1105_rcv,
-	.filter = sja1105_filter,
 	.overhead = VLAN_HLEN,
 };
 
