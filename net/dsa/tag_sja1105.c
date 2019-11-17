@@ -74,7 +74,7 @@ static inline bool sja1105_is_meta_frame(const struct sk_buff *skb)
  */
 static bool sja1105_filter(const struct sk_buff *skb, struct net_device *dev)
 {
-	if (!dsa_port_is_vlan_filtering(dev->dsa_ptr))
+	if (sja1105_can_use_vlan_as_tags(skb->dev->dsa_ptr))
 		return true;
 	if (sja1105_is_link_local(skb))
 		return true;
@@ -91,6 +91,7 @@ static struct sk_buff *sja1105_xmit(struct sk_buff *skb,
 	u16 tx_vid = dsa_8021q_tx_vid(ds, dp->index);
 	u16 queue_mapping = skb_get_queue_mapping(skb);
 	u8 pcp = netdev_txq_to_tc(netdev, queue_mapping);
+	u16 tpid;
 
 	/* Transmitting management traffic does not rely upon switch tagging,
 	 * but instead SPI-installed management routes. Part 2 of this
@@ -99,15 +100,12 @@ static struct sk_buff *sja1105_xmit(struct sk_buff *skb,
 	if (unlikely(sja1105_is_link_local(skb)))
 		return dsa_defer_xmit(skb, netdev);
 
-	/* If we are under a vlan_filtering bridge, IP termination on
-	 * switch ports based on 802.1Q tags is simply too brittle to
-	 * be passable. So just defer to the dsa_slave_notag_xmit
-	 * implementation.
-	 */
 	if (dsa_port_is_vlan_filtering(dp))
-		return skb;
+		tpid = ETH_P_8021Q;
+	else
+		tpid = ETH_P_SJA1105;
 
-	return dsa_8021q_xmit(skb, netdev, ETH_P_SJA1105,
+	return dsa_8021q_xmit(skb, netdev, tpid,
 			     ((pcp << VLAN_PRIO_SHIFT) | tx_vid));
 }
 
@@ -261,7 +259,7 @@ static struct sk_buff *sja1105_rcv(struct sk_buff *skb,
 
 	hdr = vlan_eth_hdr(skb);
 	tpid = ntohs(hdr->h_vlan_proto);
-	is_tagged = (tpid == ETH_P_SJA1105);
+	is_tagged = (tpid == ETH_P_SJA1105 || tpid == ETH_P_8021Q);
 	is_link_local = sja1105_is_link_local(skb);
 	is_meta = sja1105_is_meta_frame(skb);
 

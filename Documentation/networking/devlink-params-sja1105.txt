@@ -7,3 +7,27 @@ hostprio		[DEVICE, DRIVER-SPECIFIC]
 			your PTP frames.
 			Configuration mode: runtime
 			Type: u8. 0-7 valid.
+
+best_effort_vlan_filtering
+			[DEVICE, DRIVER-SPECIFIC]
+			Allow plain ETH_P_8021Q headers to be used as DSA tags.
+			Benefits:
+			- Can terminate untagged traffic over switch net
+			  devices even when enslaved to a bridge with
+			  vlan_filtering=1.
+			- Can do QoS based on VLAN PCP for autonomously
+			  forwarded frames.
+			Drawbacks:
+			- User cannot change pvid via 'bridge' commands. This
+			  would break source port identification on RX for
+			  untagged traffic.
+			- User cannot use VLANs in range 1024-3071. If the
+			  switch receives frames with such VIDs, it will
+			  misinterpret them as DSA tags.
+			- Cannot terminate VLAN-tagged traffic on local device.
+			  There is no way to deduce the source port from these.
+			  One could still use the DSA master though.
+			- Switch uses Shared VLAN Learning (FDB lookup uses
+			  only DMAC as key).
+			Configuration mode: runtime
+			Type: bool.

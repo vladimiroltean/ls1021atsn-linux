@@ -288,6 +288,68 @@ int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int port, bool enabled)
 }
 EXPORT_SYMBOL_GPL(dsa_port_setup_8021q_tagging);
 
+int dsa_8021q_vid_validate(struct dsa_switch *ds, int port, u16 vid, u16 flags)
+{
+	int upstream = dsa_upstream_port(ds, port);
+	int rx_vid_of = ds->num_ports;
+	int tx_vid_of = ds->num_ports;
+	int other_port;
+
+	/* @vid wants to be a pvid of @port, but is not equal to its rx_vid */
+	if ((flags & BRIDGE_VLAN_INFO_PVID) &&
+	    vid != dsa_8021q_rx_vid(ds, port))
+		return -EPERM;
+
+	for (other_port = 0; other_port < ds->num_ports; other_port++) {
+		if (vid == dsa_8021q_rx_vid(ds, other_port)) {
+			rx_vid_of = other_port;
+			break;
+		}
+		if (vid == dsa_8021q_tx_vid(ds, other_port)) {
+			tx_vid_of = other_port;
+			break;
+		}
+	}
+
+	/* @vid is a TX VLAN of the @tx_vid_of port */
+	if (tx_vid_of != ds->num_ports) {
+		if (tx_vid_of == port) {
+			if (flags != BRIDGE_VLAN_INFO_UNTAGGED)
+				return -EPERM;
+			/* Fall through on proper flags */
+		} else if (port == upstream) {
+			if (flags != 0)
+				return -EPERM;
+			/* Fall through on proper flags */
+		} else {
+			/* Trying to configure on other port */
+			return -EPERM;
+		}
+	}
+
+	/* @vid is an RX VLAN of the @rx_vid_of port */
+	if (rx_vid_of != ds->num_ports) {
+		if (rx_vid_of == port) {
+			if (flags != (BRIDGE_VLAN_INFO_UNTAGGED |
+				      BRIDGE_VLAN_INFO_PVID))
+				return -EPERM;
+			/* Fall through on proper flags */
+		} else if (port == upstream) {
+			if (flags != 0)
+				return -EPERM;
+			/* Fall through on proper flags */
+		} else if (flags != BRIDGE_VLAN_INFO_UNTAGGED) {
+			/* Trying to configure on other port, but with
+			 * invalid flags.
+			 */
+			return -EPERM;
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(dsa_8021q_vid_validate);
+
 struct sk_buff *dsa_8021q_xmit(struct sk_buff *skb, struct net_device *netdev,
 			       u16 tpid, u16 tci)
 {

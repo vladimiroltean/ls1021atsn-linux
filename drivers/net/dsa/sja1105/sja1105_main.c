@@ -1584,10 +1584,27 @@ sja1105_get_tag_protocol(struct dsa_switch *ds, int port)
 	return DSA_TAG_PROTO_SJA1105;
 }
 
-/* This callback needs to be present */
 static int sja1105_vlan_prepare(struct dsa_switch *ds, int port,
 				const struct switchdev_obj_port_vlan *vlan)
 {
+	struct sja1105_private *priv = ds->priv;
+	u16 vid;
+	int rc;
+
+	if (!dsa_port_is_vlan_filtering(dsa_to_port(ds, port)) ||
+	    !priv->best_effort_vlan_filtering)
+		return 0;
+
+	/* If the user wants best-effort VLAN filtering (aka vlan_filtering
+	 * bridge plus tagging), be sure to at least deny alterations to the
+	 * configuration done by dsa_8021q.
+	 */
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; vid++) {
+		rc = dsa_8021q_vid_validate(ds, port, vid, vlan->flags);
+		if (rc < 0)
+			return rc;
+	}
+
 	return 0;
 }
 
@@ -1601,6 +1618,7 @@ static int sja1105_vlan_filtering(struct dsa_switch *ds, int port, bool enabled)
 	struct sja1105_general_params_entry *general_params;
 	struct sja1105_private *priv = ds->priv;
 	struct sja1105_table *table;
+	bool want_tagging;
 	u16 tpid, tpid2;
 	int rc;
 
@@ -1626,8 +1644,10 @@ static int sja1105_vlan_filtering(struct dsa_switch *ds, int port, bool enabled)
 	general_params->incl_srcpt1 = enabled;
 	general_params->incl_srcpt0 = enabled;
 
+	want_tagging = priv->best_effort_vlan_filtering || !enabled;
+
 	/* VLAN filtering => independent VLAN learning.
-	 * No VLAN filtering => shared VLAN learning.
+	 * No VLAN filtering (or best effort) => shared VLAN learning.
 	 *
 	 * In shared VLAN learning mode, untagged traffic still gets
 	 * pvid-tagged, and the FDB table gets populated with entries
@@ -1646,7 +1666,7 @@ static int sja1105_vlan_filtering(struct dsa_switch *ds, int port, bool enabled)
 	 */
 	table = &priv->static_config.tables[BLK_IDX_L2_LOOKUP_PARAMS];
 	l2_lookup_params = table->entries;
-	l2_lookup_params->shared_learn = !enabled;
+	l2_lookup_params->shared_learn = want_tagging;
 
 	rc = sja1105_static_config_reload(priv, SJA1105_VLAN_FILTERING);
 	if (rc)
@@ -1654,10 +1674,23 @@ static int sja1105_vlan_filtering(struct dsa_switch *ds, int port, bool enabled)
 
 	/* Switch port identification based on 802.1Q is only passable
 	 * if we are not under a vlan_filtering bridge. So make sure
-	 * the two configurations are mutually exclusive.
+	 * the two configurations are mutually exclusive (of course, the
+	 * user may know better, i.e. best_effort_vlan_filtering).
 	 */
-	return sja1105_setup_8021q_tagging(ds, !enabled);
+	return sja1105_setup_8021q_tagging(ds, want_tagging);
 }
+
+bool sja1105_can_use_vlan_as_tags(struct dsa_port *dp)
+{
+	struct dsa_switch *ds = dp->ds;
+	struct sja1105_private *priv = ds->priv;
+
+	if (dsa_port_is_vlan_filtering(dp) && !priv->best_effort_vlan_filtering)
+		return false;
+
+	return true;
+}
+EXPORT_SYMBOL_GPL(sja1105_can_use_vlan_as_tags);
 
 static void sja1105_vlan_add(struct dsa_switch *ds, int port,
 			     const struct switchdev_obj_port_vlan *vlan)
@@ -1731,9 +1764,35 @@ static int sja1105_hostprio_set(struct sja1105_private *priv, u8 hostprio)
 	return sja1105_static_config_reload(priv, SJA1105_HOSTPRIO);
 }
 
+static int sja1105_best_effort_vlan_filtering_get(struct sja1105_private *priv,
+						  bool *be_vlan)
+{
+	*be_vlan = priv->best_effort_vlan_filtering;
+
+	return 0;
+}
+
+static int sja1105_best_effort_vlan_filtering_set(struct sja1105_private *priv,
+						  bool be_vlan)
+{
+	struct dsa_switch *ds = priv->ds;
+	bool vlan_filtering;
+	int rc;
+
+	vlan_filtering = dsa_port_is_vlan_filtering(dsa_to_port(ds, 0));
+	priv->best_effort_vlan_filtering = be_vlan;
+
+	rtnl_lock();
+	rc = sja1105_vlan_filtering(ds, 0, vlan_filtering);
+	rtnl_unlock();
+
+	return rc;
+}
+
 enum sja1105_devlink_param_id {
 	SJA1105_DEVLINK_PARAM_ID_BASE = DEVLINK_PARAM_GENERIC_ID_MAX,
 	SJA1105_DEVLINK_PARAM_ID_HOSTPRIO,
+	SJA1105_DEVLINK_PARAM_ID_BEST_EFFORT_VLAN_FILTERING,
 };
 
 static int sja1105_devlink_param_get(struct dsa_switch *ds, u32 id,
@@ -1745,6 +1804,10 @@ static int sja1105_devlink_param_get(struct dsa_switch *ds, u32 id,
 	switch (id) {
 	case SJA1105_DEVLINK_PARAM_ID_HOSTPRIO:
 		err = sja1105_hostprio_get(priv, &ctx->val.vu8);
+		break;
+	case SJA1105_DEVLINK_PARAM_ID_BEST_EFFORT_VLAN_FILTERING:
+		err = sja1105_best_effort_vlan_filtering_get(priv,
+							     &ctx->val.vbool);
 		break;
 	default:
 		err = -EOPNOTSUPP;
@@ -1764,6 +1827,10 @@ static int sja1105_devlink_param_set(struct dsa_switch *ds, u32 id,
 	case SJA1105_DEVLINK_PARAM_ID_HOSTPRIO:
 		err = sja1105_hostprio_set(priv, ctx->val.vu8);
 		break;
+	case SJA1105_DEVLINK_PARAM_ID_BEST_EFFORT_VLAN_FILTERING:
+		err = sja1105_best_effort_vlan_filtering_set(priv,
+							     ctx->val.vbool);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -1775,6 +1842,10 @@ static int sja1105_devlink_param_set(struct dsa_switch *ds, u32 id,
 static const struct devlink_param sja1105_devlink_params[] = {
 	DSA_DEVLINK_PARAM_DRIVER(SJA1105_DEVLINK_PARAM_ID_HOSTPRIO,
 				 "hostprio", DEVLINK_PARAM_TYPE_U8,
+				 BIT(DEVLINK_PARAM_CMODE_RUNTIME)),
+	DSA_DEVLINK_PARAM_DRIVER(SJA1105_DEVLINK_PARAM_ID_BEST_EFFORT_VLAN_FILTERING,
+				 "best_effort_vlan_filtering",
+				 DEVLINK_PARAM_TYPE_BOOL,
 				 BIT(DEVLINK_PARAM_CMODE_RUNTIME)),
 };
 

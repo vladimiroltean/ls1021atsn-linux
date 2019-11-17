@@ -77,6 +77,41 @@ change.
 The TPID is restored when ``vlan_filtering`` is requested by the user through
 the bridge layer, and general IP termination becomes no longer possible through
 the switch netdevices in this mode.
+There exists a third configuration option, via ``best_effort_vlan_filtering``.
+This permits termination of some traffic on switch net devices (untagged
+frames), at the expense of losing some VLAN filtering abilities: reduced range
+of usable VIDs, cannot change pvid.
+This operating mode is slightly insane to be collated with the default
+``vlan_filtering``, so it is an opt-in that needs to be enabled using a devlink
+parameter. To enable it::
+
+  ip link set dev br0 type bridge vlan_filtering 1
+  [   61.204770] sja1105 spi0.1: Reset switch and programmed static config. Reason: VLAN filtering
+  [   61.239944] sja1105 spi0.1: Disabled switch tagging
+  devlink dev param set spi/spi0.1 name best_effort_vlan_filtering value true cmode runtime
+  [   64.682927] sja1105 spi0.1: Reset switch and programmed static config. Reason: VLAN filtering
+  [   64.711925] sja1105 spi0.1: Enabled switch tagging
+  bridge vlan add dev swp2 vid 1025 untagged pvid
+  RTNETLINK answers: Operation not permitted
+  bridge vlan add dev swp2 vid 100
+  bridge vlan add dev swp2 vid 101 untagged
+  bridge vlan
+  port    vlan ids
+  swp5     1 PVID Egress Untagged
+
+  swp2     1 PVID Egress Untagged
+           100
+           101 Egress Untagged
+
+  swp3     1 PVID Egress Untagged
+
+  swp4     1 PVID Egress Untagged
+
+  br0      1 PVID Egress Untagged
+
+Note that in the above example, the bridge is unaware of the dsa_8021q VLANs
+and thinks the pvid of each port is 1. The bridge code design makes it too
+complicated to make it aware of these VIDs.
 
 The switches have two programmable filters for link-local destination MACs.
 These are used to trap BPDUs and PTP traffic to the master netdevice, and are
@@ -85,15 +120,18 @@ functionality.
 
 The following traffic modes are supported over the switch netdevices:
 
-+--------------------+------------+------------------+------------------+
-|                    | Standalone | Bridged with     | Bridged with     |
-|                    | ports      | vlan_filtering 0 | vlan_filtering 1 |
-+====================+============+==================+==================+
-| Regular traffic    |     Yes    |       Yes        |  No (use master) |
-+--------------------+------------+------------------+------------------+
-| Management traffic |     Yes    |       Yes        |       Yes        |
-| (BPDU, PTP)        |            |                  |                  |
-+--------------------+------------+------------------+------------------+
++-------------+------------+----------------+----------------+----------------------------+
+|             | Standalone |  Bridged with  |  Bridged with  |        Bridged with        |
+|             |    ports   | vlan_filtering | vlan_filtering | best_effort_vlan_filtering |
+|             |            |        0       |        1       |              1             |
++=============+============+================+================+============================+
+|   Regular   |     Yes    |       Yes      |       No       |     Partial (untagged),    |
+|   traffic   |            |                |  (use master)  |    use master for tagged   |
++-------------+------------+----------------+----------------+----------------------------+
+| Management  |     Yes    |       Yes      |      Yes       |             Yes            |
+|  traffic    |            |                |                |                            |
+| (BPDU, PTP) |            |                |                |                            |
++-------------+------------+----------------+----------------+----------------------------+
 
 Switching features
 ==================
@@ -144,7 +182,23 @@ intended results.
 If br0 has vlan_filtering 1, then a new br1 interface needs to be created that
 enslaves eth0 and eth1 (the DSA master of the switch ports). This is because in
 this mode, the switch ports beneath br0 are not capable of regular traffic, and
-are only used as a conduit for switchdev operations.
+are only used as a conduit for switchdev operations. But this cannot be done,
+due to this check in ``net/bridge/br_if.c``::
+
+	/* Don't allow bridging non-ethernet like devices, or DSA-enabled
+	 * master network devices since the bridge layer rx_handler prevents
+	 * the DSA fake ethertype handler to be invoked, so we do not strip off
+	 * the DSA switch tag protocol header and the bridge layer just return
+	 * RX_HANDLER_CONSUMED, stopping RX processing for these frames.
+	 */
+	if ((dev->flags & IFF_LOOPBACK) ||
+	    dev->type != ARPHRD_ETHER || dev->addr_len != ETH_ALEN ||
+	    !is_valid_ether_addr(dev->dev_addr) ||
+	    netdev_uses_dsa(dev))
+		return -EINVAL;
+
+So in practice, bridging with other net devices only works if the switch ports
+are able of terminating traffic.
 
 Offloads
 ========
