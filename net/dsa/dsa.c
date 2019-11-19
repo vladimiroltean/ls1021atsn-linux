@@ -179,9 +179,11 @@ EXPORT_SYMBOL_GPL(dsa_dev_to_net_device);
 static bool dsa_skb_defer_rx_timestamp(struct dsa_slave_priv *p,
 				       struct sk_buff *skb)
 {
+	struct ethhdr *ether = eth_hdr(skb);
 	struct dsa_switch *ds = p->dp->ds;
 	unsigned int type;
 
+#if 0
 	if (skb_headroom(skb) < ETH_HLEN)
 		return false;
 
@@ -190,6 +192,11 @@ static bool dsa_skb_defer_rx_timestamp(struct dsa_slave_priv *p,
 	type = ptp_classify_raw(skb);
 
 	__skb_pull(skb, ETH_HLEN);
+#endif
+	if (ntohs(ether->h_proto) == ETH_P_1588)
+		type = PTP_CLASS_L2;
+	else
+		type = PTP_CLASS_NONE;
 
 	if (type == PTP_CLASS_NONE)
 		return false;
@@ -198,6 +205,77 @@ static bool dsa_skb_defer_rx_timestamp(struct dsa_slave_priv *p,
 		return ds->ops->port_rxtstamp(ds, p->dp->index, skb, type);
 
 	return false;
+}
+
+/* Get the start of the PTP header in this skb */
+static u8 *parse_ptp_header(struct sk_buff *skb, unsigned int type)
+{
+	u8 *data = skb_mac_header(skb);
+	unsigned int offset = 0;
+
+	if (type & PTP_CLASS_VLAN)
+		offset += VLAN_HLEN;
+
+	switch (type & PTP_CLASS_PMASK) {
+	case PTP_CLASS_IPV4:
+		offset += ETH_HLEN + IPV4_HLEN(data + offset) + UDP_HLEN;
+		break;
+	case PTP_CLASS_IPV6:
+		offset += ETH_HLEN + IP6_HLEN + UDP_HLEN;
+		break;
+	case PTP_CLASS_L2:
+		offset += ETH_HLEN;
+		break;
+	default:
+		return NULL;
+	}
+
+	/* Ensure that the entire header is present in this packet. */
+	if (skb->len + ETH_HLEN < offset + 34)
+		return NULL;
+
+	return data + offset;
+}
+
+void dsa_debug_ptp(struct sk_buff *skb, const char *func, int line)
+{
+	struct ethhdr *ether = eth_hdr(skb);
+	static int last_msgtype;
+	static int last_seqid;
+	__be16 *seqid_ptr;
+	int seqid;
+	u8 msgtype;
+	u8 *hdr;
+
+	if (ntohs(ether->h_proto) != ETH_P_1588)
+		return;
+
+	hdr = parse_ptp_header(skb, PTP_CLASS_L2);
+	if (!hdr) {
+		printk(KERN_ERR "%s %d: invalid ptp header\n", func, line);
+		return;
+	}
+
+	seqid_ptr = (__be16 *)(hdr + OFF_PTP_SEQUENCE_ID);
+	seqid = ntohs(*seqid_ptr);
+	msgtype = hdr[0] & 0xf;
+	switch (msgtype) {
+	case 0:
+		if (last_msgtype != 8 || seqid != last_seqid + 1)
+			printk(KERN_ERR "%s %d cpu %d: sync %d came after another %s (%d)\n",
+				func, line, smp_processor_id(), seqid, last_msgtype == 0 ? "sync" : "follow-up", last_seqid);
+		break;
+	case 8:
+		if (last_msgtype != 0 || seqid != last_seqid)
+			printk(KERN_ERR "%s %d cpu %d: follow-up %d came after another %s (%d)\n",
+				func, line, smp_processor_id(), seqid, last_msgtype == 0 ? "sync" : "follow-up", last_seqid);
+		break;
+	default:
+		return;
+	}
+
+	last_seqid = seqid;
+	last_msgtype = msgtype;
 }
 
 static int dsa_switch_rcv(struct sk_buff *skb, struct net_device *dev,
