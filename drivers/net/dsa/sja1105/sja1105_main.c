@@ -1980,6 +1980,8 @@ static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
 	rc = sja1105_dynamic_config_write(priv, BLK_IDX_MGMT_ROUTE,
 					  slot, &mgmt_route, true);
 	if (rc < 0) {
+		dev_err_ratelimited(priv->ds->dev,
+				    "failed to program mgmt route\n");
 		kfree_skb(skb);
 		return rc;
 	}
