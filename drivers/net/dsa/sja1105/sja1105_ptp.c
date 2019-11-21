@@ -377,32 +377,32 @@ static void sja1105_rxtstamp_work(struct work_struct *work)
 	struct sja1105_tagger_data *tagger_data = rxtstamp_to_tagger(work);
 	struct sja1105_private *priv = tagger_to_sja1105(tagger_data);
 	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
+	struct skb_shared_hwtstamps *shwt;
 	struct dsa_switch *ds = priv->ds;
 	struct sk_buff *skb;
+	u64 ticks, ts;
+	int rc;
 
 	mutex_lock(&ptp_data->lock);
 
-	while ((skb = skb_dequeue(&tagger_data->skb_rxtstamp_queue)) != NULL) {
-		struct skb_shared_hwtstamps *shwt = skb_hwtstamps(skb);
-		u64 ticks, ts;
-		int rc;
+	skb = skb_dequeue(&tagger_data->skb_rxtstamp_queue);
 
-		rc = sja1105_ptpclkval_read(priv, &ticks, NULL);
-		if (rc < 0) {
-			dev_err(ds->dev, "Failed to read PTP clock: %d\n", rc);
-			kfree_skb(skb);
-			continue;
-		}
-
-		*shwt = (struct skb_shared_hwtstamps) {0};
-
-		ts = SJA1105_SKB_CB(skb)->meta_tstamp;
-		ts = sja1105_tstamp_reconstruct(ds, ticks, ts);
-
-		shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
-		netif_rx_ni(skb);
+	rc = sja1105_ptpclkval_read(priv, &ticks, NULL);
+	if (rc < 0) {
+		dev_err(ds->dev, "Failed to read PTP clock: %d\n", rc);
+		kfree_skb(skb);
+		goto out;
 	}
 
+	shwt = skb_hwtstamps(skb);
+	*shwt = (struct skb_shared_hwtstamps) {0};
+
+	ts = SJA1105_SKB_CB(skb)->meta_tstamp;
+	ts = sja1105_tstamp_reconstruct(ds, ticks, ts);
+
+	shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
+	netif_rx_ni(skb);
+out:
 	mutex_unlock(&ptp_data->lock);
 }
 
