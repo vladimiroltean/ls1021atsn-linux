@@ -83,6 +83,7 @@ static int sja1105_init_avb_params(struct sja1105_private *priv,
 static int sja1105_change_rxtstamping(struct sja1105_private *priv,
 				      bool on)
 {
+	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
 	struct sja1105_general_params_entry *general_params;
 	struct sja1105_table *table;
 	int rc;
@@ -367,33 +368,27 @@ static int sja1105_ptpclkval_write(struct sja1105_private *priv, u64 ticks,
 				ptp_sts);
 }
 
-#define rxtstamp_to_tagger(d) \
-	container_of((d), struct sja1105_tagger_data, rxtstamp_work)
-#define tagger_to_sja1105(d) \
-	container_of((d), struct sja1105_private, tagger_data)
-
-static void sja1105_rxtstamp_work(struct work_struct *work)
+static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 {
-	struct sja1105_tagger_data *tagger_data = rxtstamp_to_tagger(work);
-	struct sja1105_private *priv = tagger_to_sja1105(tagger_data);
-	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
+	struct sja1105_ptp_data *ptp_data = ptp_caps_to_data(ptp);
+	struct sja1105_private *priv = ptp_data_to_sja1105(ptp_data);
+	struct skb_shared_hwtstamps *shwt;
 	struct dsa_switch *ds = priv->ds;
 	struct sk_buff *skb;
+	u64 ticks, ts;
+	int rc;
 
 	mutex_lock(&ptp_data->lock);
 
-	while ((skb = skb_dequeue(&tagger_data->skb_rxtstamp_queue)) != NULL) {
-		struct skb_shared_hwtstamps *shwt = skb_hwtstamps(skb);
-		u64 ticks, ts;
-		int rc;
-
+	while ((skb = skb_dequeue(&ptp_data->skb_rxtstamp_queue)) != NULL) {
 		rc = sja1105_ptpclkval_read(priv, &ticks, NULL);
 		if (rc < 0) {
 			dev_err(ds->dev, "Failed to read PTP clock: %d\n", rc);
 			kfree_skb(skb);
-			continue;
+			goto out;
 		}
 
+		shwt = skb_hwtstamps(skb);
 		*shwt = (struct skb_shared_hwtstamps) {0};
 
 		ts = SJA1105_SKB_CB(skb)->meta_tstamp;
@@ -402,8 +397,11 @@ static void sja1105_rxtstamp_work(struct work_struct *work)
 		shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
 		netif_rx_ni(skb);
 	}
-
+out:
 	mutex_unlock(&ptp_data->lock);
+
+	/* Don't restart */
+	return -1;
 }
 
 /* Called from dsa_skb_defer_rx_timestamp */
@@ -411,16 +409,16 @@ bool sja1105_port_rxtstamp(struct dsa_switch *ds, int port,
 			   struct sk_buff *skb, unsigned int type)
 {
 	struct sja1105_private *priv = ds->priv;
-	struct sja1105_tagger_data *tagger_data = &priv->tagger_data;
+	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
 
-	if (!test_bit(SJA1105_HWTS_RX_EN, &tagger_data->state))
+	if (!test_bit(SJA1105_HWTS_RX_EN, &priv->tagger_data.state))
 		return false;
 
 	/* We need to read the full PTP clock to reconstruct the Rx
 	 * timestamp. For that we need a sleepable context.
 	 */
-	skb_queue_tail(&tagger_data->skb_rxtstamp_queue, skb);
-	schedule_work(&tagger_data->rxtstamp_work);
+	skb_queue_tail(&ptp_data->skb_rxtstamp_queue, skb);
+	ptp_schedule_worker(ptp_data->clock, 0);
 	return true;
 }
 
@@ -628,11 +626,11 @@ int sja1105_ptp_clock_register(struct dsa_switch *ds)
 		.adjtime	= sja1105_ptp_adjtime,
 		.gettimex64	= sja1105_ptp_gettimex,
 		.settime64	= sja1105_ptp_settime,
+		.do_aux_work	= sja1105_rxtstamp_work,
 		.max_adj	= SJA1105_MAX_ADJ_PPB,
 	};
 
-	skb_queue_head_init(&tagger_data->skb_rxtstamp_queue);
-	INIT_WORK(&tagger_data->rxtstamp_work, sja1105_rxtstamp_work);
+	skb_queue_head_init(&ptp_data->skb_rxtstamp_queue);
 	spin_lock_init(&tagger_data->meta_lock);
 
 	ptp_data->clock = ptp_clock_register(&ptp_data->caps, ds->dev);
@@ -653,8 +651,8 @@ void sja1105_ptp_clock_unregister(struct dsa_switch *ds)
 	if (IS_ERR_OR_NULL(ptp_data->clock))
 		return;
 
-	cancel_work_sync(&priv->tagger_data.rxtstamp_work);
-	skb_queue_purge(&priv->tagger_data.skb_rxtstamp_queue);
+	ptp_cancel_worker_sync(ptp_data->clock);
+	skb_queue_purge(&ptp_data->skb_rxtstamp_queue);
 	ptp_clock_unregister(ptp_data->clock);
 	ptp_data->clock = NULL;
 }
