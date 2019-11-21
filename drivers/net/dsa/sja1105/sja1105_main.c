@@ -1804,8 +1804,10 @@ static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
 		 * cleared when a match is found. The host can use this
 		 * flag as an acknowledgment.
 		 */
-		cpu_relax();
-	} while (mgmt_route.enfport && --timeout);
+		if (!mgmt_route.enfport)
+			break;
+		usleep_range(100, 500);
+	} while (--timeout);
 
 	if (!timeout) {
 		/* Clean up the management route so that a follow-up
