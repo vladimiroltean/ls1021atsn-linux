@@ -115,10 +115,14 @@ static void sja1105_transfer_meta(struct sk_buff *skb,
 				  const struct sja1105_meta *meta)
 {
 	struct ethhdr *hdr = eth_hdr(skb);
+	struct skb_shared_hwtstamps *shwt;
+
+	shwt = skb_hwtstamps(skb);
+	*shwt = (struct skb_shared_hwtstamps) {0};
 
 	hdr->h_dest[3] = meta->dmac_byte_3;
 	hdr->h_dest[4] = meta->dmac_byte_4;
-	SJA1105_SKB_CB(skb)->meta_tstamp = meta->tstamp;
+	shwt->hwtstamp = meta->tstamp;
 }
 
 /* This is a simple state machine which follows the hardware mechanism of
