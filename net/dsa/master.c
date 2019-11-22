@@ -284,18 +284,19 @@ static const struct attribute_group dsa_group = {
 	.attrs	= dsa_slave_attrs,
 };
 
-static void dsa_master_set_mtu(struct net_device *dev, struct dsa_port *cpu_dp)
+/* Needs to be called under rtnl_lock */
+int dsa_master_set_mtu(struct net_device *dev, struct dsa_port *cpu_dp,
+		       int mtu)
 {
-	unsigned int mtu = ETH_DATA_LEN + cpu_dp->tag_ops->overhead;
-	int err;
+	int err = -ERANGE;
 
-	rtnl_lock();
 	if (mtu <= dev->max_mtu) {
 		err = dev_set_mtu(dev, mtu);
 		if (err)
 			netdev_dbg(dev, "Unable to set MTU to include for DSA overheads\n");
 	}
-	rtnl_unlock();
+
+	return err;
 }
 
 static void dsa_master_reset_mtu(struct net_device *dev)
@@ -313,8 +314,6 @@ static void dsa_master_reset_mtu(struct net_device *dev)
 int dsa_master_setup(struct net_device *dev, struct dsa_port *cpu_dp)
 {
 	int ret;
-
-	dsa_master_set_mtu(dev,  cpu_dp);
 
 	/* If we use a tagging format that doesn't have an ethertype
 	 * field, make sure that all packets from this point on get
