@@ -391,11 +391,7 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 			continue;
 		}
 
-		*shwt = (struct skb_shared_hwtstamps) {0};
-
-		ts = SJA1105_SKB_CB(skb)->meta_tstamp;
-		ts = sja1105_tstamp_reconstruct(ds, ticks, ts);
-
+		ts = sja1105_tstamp_reconstruct(ds, ticks, shwt->hwtstamp);
 		shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
 		netif_rx_ni(skb);
 	}
