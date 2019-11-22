@@ -391,6 +391,7 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 	shwt = skb_hwtstamps(skb);
 	ts = sja1105_tstamp_reconstruct(ds, ticks, shwt->hwtstamp);
 	shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
+	memset(skb->cb, 0, 48);
 	netif_rx_ni(skb);
 out:
 	mutex_unlock(&ptp_data->lock);
