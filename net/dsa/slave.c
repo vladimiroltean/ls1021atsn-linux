@@ -149,6 +149,60 @@ static void dsa_slave_change_rx_flags(struct net_device *dev, int change)
 	}
 }
 
+static int dsa_slave_change_mtu(struct net_device *dev, int new_mtu)
+{
+	struct net_device *master = dsa_slave_to_master(dev);
+	struct dsa_slave_priv *p = netdev_priv(dev);
+	struct dsa_switch *ds = p->dp->ds;
+	struct dsa_port *cpu_dp;
+	int port = p->dp->index;
+	int max_mtu = 0;
+	int cpu_mtu;
+	int err, i;
+
+	if (!ds->ops->change_mtu)
+		return -EOPNOTSUPP;
+
+	err = ds->ops->change_mtu(ds, port, new_mtu);
+	if (err < 0)
+		return err;
+
+	dev->mtu = new_mtu;
+
+	for (i = 0; i < ds->num_ports; i++) {
+		if (!dsa_is_user_port(ds, i))
+			continue;
+
+		/* During probe, this function will be called for each slave
+		 * device, while not all of them have been allocated. That's
+		 * ok, it doesn't change what the maximum is, so ignore it.
+		 */
+		if (!dsa_to_port(ds, i)->slave)
+			continue;
+
+		if (max_mtu < dsa_to_port(ds, i)->slave->mtu)
+			max_mtu = dsa_to_port(ds, i)->slave->mtu;
+	}
+
+	cpu_dp = dsa_to_port(ds, port)->cpu_dp;
+
+	max_mtu += cpu_dp->tag_ops->overhead;
+	cpu_mtu = master->mtu;
+
+	if (max_mtu != cpu_mtu) {
+		err = ds->ops->change_mtu(ds, dsa_upstream_port(ds, port),
+					  max_mtu - cpu_dp->tag_ops->overhead);
+		if (err < 0)
+			return err;
+
+		err = dsa_master_set_mtu(master, cpu_dp, max_mtu);
+		if (err < 0)
+			return err;
+	}
+
+	return err;
+}
+
 static void dsa_slave_set_rx_mode(struct net_device *dev)
 {
 	struct net_device *master = dsa_slave_to_master(dev);
@@ -1248,6 +1302,7 @@ static const struct net_device_ops dsa_slave_netdev_ops = {
 	.ndo_stop		= dsa_slave_close,
 	.ndo_start_xmit		= dsa_slave_xmit,
 	.ndo_change_rx_flags	= dsa_slave_change_rx_flags,
+	.ndo_change_mtu		= dsa_slave_change_mtu,
 	.ndo_set_rx_mode	= dsa_slave_set_rx_mode,
 	.ndo_set_mac_address	= dsa_slave_set_mac_address,
 	.ndo_fdb_add		= dsa_legacy_fdb_add,
@@ -1440,7 +1495,10 @@ int dsa_slave_create(struct dsa_port *port)
 	slave_dev->priv_flags |= IFF_NO_QUEUE;
 	slave_dev->netdev_ops = &dsa_slave_netdev_ops;
 	slave_dev->min_mtu = 0;
-	slave_dev->max_mtu = ETH_MAX_MTU;
+	if (ds->ops->get_max_mtu)
+		slave_dev->max_mtu = ds->ops->get_max_mtu(ds, port->index);
+	else
+		slave_dev->max_mtu = ETH_MAX_MTU;
 	SET_NETDEV_DEVTYPE(slave_dev, &dsa_type);
 
 	SET_NETDEV_DEV(slave_dev, port->ds->dev);
@@ -1459,6 +1517,10 @@ int dsa_slave_create(struct dsa_port *port)
 	skb_queue_head_init(&port->xmit_queue);
 	p->xmit = cpu_dp->tag_ops->xmit;
 	port->slave = slave_dev;
+
+	rtnl_lock();
+	dsa_slave_change_mtu(slave_dev, ETH_DATA_LEN);
+	rtnl_unlock();
 
 	netif_carrier_off(slave_dev);
 
