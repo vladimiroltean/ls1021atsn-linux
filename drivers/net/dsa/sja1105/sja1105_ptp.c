@@ -379,7 +379,7 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 
 	mutex_lock(&ptp_data->lock);
 
-	skb = skb_dequeue(&ptp_data->skb_rxtstamp_queue);
+	while ((skb = skb_dequeue(&ptp_data->skb_rxtstamp_queue)) != NULL) {
 
 	rc = sja1105_ptpclkval_read(priv, &ticks, NULL);
 	if (rc < 0) {
@@ -393,6 +393,7 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 	shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
 	memset(skb->cb, 0, 48);
 	netif_rx_ni(skb);
+	}
 out:
 	mutex_unlock(&ptp_data->lock);
 
