@@ -151,6 +151,7 @@ static struct sk_buff
 				bool is_link_local,
 				bool is_meta)
 {
+	struct sk_buff *skb_to_free = NULL;
 	struct sja1105_port *sp;
 	struct dsa_port *dp;
 
@@ -174,7 +175,7 @@ static struct sk_buff
 					    "Expected meta frame, is %12llx "
 					    "in the DSA master multicast filter?\n",
 					    SJA1105_META_DMAC);
-			kfree_skb(sp->data->stampable_skb);
+			skb_to_free = sp->data->stampable_skb;
 		}
 
 		/* Hold a reference to avoid dsa_switch_rcv
@@ -182,6 +183,9 @@ static struct sk_buff
 		 */
 		sp->data->stampable_skb = skb_get(skb);
 		spin_unlock(&sp->data->meta_lock);
+
+		if (skb_to_free)
+			kfree_skb(skb_to_free);
 
 		/* Tell DSA we got nothing */
 		return NULL;
@@ -226,11 +230,14 @@ static struct sk_buff
 		/* Free the meta frame and give DSA the buffered stampable_skb
 		 * for further processing up the network stack.
 		 */
-		kfree_skb(skb);
+		skb_to_free = skb;
 		skb = stampable_skb;
 		sja1105_transfer_meta(skb, meta);
 
 		spin_unlock(&sp->data->meta_lock);
+
+		if (skb_to_free)
+			kfree_skb(skb_to_free);
 	}
 
 	return skb;
