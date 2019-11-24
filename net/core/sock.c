@@ -3087,7 +3087,7 @@ int sock_recv_errqueue(struct sock *sk, struct msghdr *msg, int len,
 	err = copied;
 
 out_free_skb:
-	kfree_skb(skb);
+	consume_skb(skb);
 out:
 	return err;
 }

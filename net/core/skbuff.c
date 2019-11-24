@@ -693,6 +693,8 @@ void kfree_skb(struct sk_buff *skb)
 	if (!skb_unref(skb))
 		return;
 
+	if (skb && ntohs(eth_hdr(skb)->h_proto) == ETH_P_1588)
+		dump_stack();
 	trace_kfree_skb(skb, __builtin_return_address(0));
 	__kfree_skb(skb);
 }
