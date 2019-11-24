@@ -340,11 +340,15 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 	struct dsa_switch *ds = priv->ds;
 	struct sk_buff *skb;
 	u64 ticks, ts;
+	bool restart;
 	int rc;
 
 	mutex_lock(&ptp_data->lock);
 
-	while ((skb = skb_dequeue(&ptp_data->skb_rxtstamp_queue)) != NULL) {
+	/*while ((skb = skb_dequeue(&ptp_data->skb_rxtstamp_queue)) != NULL) {*/
+	skb = skb_dequeue(&ptp_data->skb_rxtstamp_queue);
+	if (!skb)
+		goto out;
 
 	rc = sja1105_ptpclkval_read(priv, &ticks, NULL);
 	if (rc < 0) {
@@ -358,11 +362,13 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 	shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
 	memset(skb->cb, 0, 48);
 	netif_rx_ni(skb);
-	}
+	/*}*/
 out:
+	restart = !skb_queue_empty(&ptp_data->skb_rxtstamp_queue);
 	mutex_unlock(&ptp_data->lock);
 
-	/* Don't restart */
+	if (restart)
+		return 1;
 	return -1;
 }
 
