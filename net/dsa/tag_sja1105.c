@@ -311,7 +311,7 @@ static struct dsa_device_ops sja1105_netdev_ops = {
 	.proto = DSA_TAG_PROTO_SJA1105,
 	.xmit = sja1105_xmit,
 	.rcv = sja1105_rcv,
-	.filter = sja1105_filter,
+	/*.filter = sja1105_filter,*/
 	.overhead = VLAN_HLEN,
 };
 
