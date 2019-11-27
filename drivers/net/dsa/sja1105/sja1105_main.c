@@ -426,13 +426,11 @@ static int sja1105_init_general_params(struct sja1105_private *priv)
 		.tpid2 = ETH_P_SJA1105,
 	};
 	struct sja1105_table *table;
-	int i, k = 0;
+	int i;
 
 	for (i = 0; i < SJA1105_NUM_PORTS; i++) {
 		if (dsa_is_dsa_port(priv->ds, i))
 			default_general_params.casc_port = i;
-		else if (dsa_is_user_port(priv->ds, i))
-			priv->ports[i].mgmt_slot = k++;
 	}
 
 	table = &priv->static_config.tables[BLK_IDX_GENERAL_PARAMS];
@@ -1960,34 +1958,11 @@ static int sja1105_port_enable(struct dsa_switch *ds, int port,
 	return 0;
 }
 
-static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
-			     struct sk_buff *skb, bool takets)
+static void sja1105_poll_mgmt_route(struct sja1105_private *priv, int slot)
 {
 	struct sja1105_mgmt_entry mgmt_route = {0};
-	struct sja1105_private *priv = ds->priv;
-	struct ethhdr *hdr;
-	int timeout = 10;
+	int timeout = 100;
 	int rc;
-
-	hdr = eth_hdr(skb);
-
-	mgmt_route.macaddr = ether_addr_to_u64(hdr->h_dest);
-	mgmt_route.destports = BIT(port);
-	mgmt_route.enfport = 1;
-	mgmt_route.tsreg = 0;
-	mgmt_route.takets = takets;
-
-	rc = sja1105_dynamic_config_write(priv, BLK_IDX_MGMT_ROUTE,
-					  slot, &mgmt_route, true);
-	if (rc < 0) {
-		dev_err_ratelimited(priv->ds->dev,
-				    "failed to program mgmt route\n");
-		kfree_skb(skb);
-		return rc;
-	}
-
-	/* Transfer skb to the host port. */
-	dsa_enqueue_skb(skb, dsa_to_port(ds, port)->slave);
 
 	/* Wait until the switch has processed the frame */
 	do {
@@ -2018,6 +1993,35 @@ static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
 					     slot, &mgmt_route, false);
 		dev_err_ratelimited(priv->ds->dev, "xmit timed out\n");
 	}
+}
+
+static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
+			     struct sk_buff *skb, bool takets, int tsreg)
+{
+	struct sja1105_mgmt_entry mgmt_route = {0};
+	struct sja1105_private *priv = ds->priv;
+	struct ethhdr *hdr;
+	int rc;
+
+	hdr = eth_hdr(skb);
+
+	mgmt_route.macaddr = ether_addr_to_u64(hdr->h_dest);
+	mgmt_route.destports = BIT(port);
+	mgmt_route.enfport = 1;
+	mgmt_route.tsreg = tsreg;
+	mgmt_route.takets = takets;
+
+	rc = sja1105_dynamic_config_write(priv, BLK_IDX_MGMT_ROUTE,
+					  slot, &mgmt_route, true);
+	if (rc < 0) {
+		dev_err_ratelimited(priv->ds->dev,
+				    "failed to program mgmt route %d\n", slot);
+		kfree_skb(skb);
+		return rc;
+	}
+
+	/* Transfer skb to the host port. */
+	dsa_enqueue_skb(skb, dsa_to_port(ds, port)->slave);
 
 	return NETDEV_TX_OK;
 }
@@ -2031,37 +2035,52 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 {
 	struct sja1105_private *priv = ds->priv;
 	struct sja1105_port *sp = &priv->ports[port];
-	int slot = sp->mgmt_slot;
 	struct sk_buff *clone;
-
-	/* The tragic fact about the switch having 4x2 slots for installing
-	 * management routes is that all of them except one are actually
-	 * useless.
-	 * If 2 slots are simultaneously configured for two BPDUs sent to the
-	 * same (multicast) DMAC but on different egress ports, the switch
-	 * would confuse them and redirect first frame it receives on the CPU
-	 * port towards the port configured on the numerically first slot
-	 * (therefore wrong port), then second received frame on second slot
-	 * (also wrong port).
-	 * So for all practical purposes, there needs to be a lock that
-	 * prevents that from happening. The slot used here is utterly useless
-	 * (could have simply been 0 just as fine), but we are doing it
-	 * nonetheless, in case a smarter idea ever comes up in the future.
-	 */
-	mutex_lock(&priv->mgmt_lock);
+	int tsreg = 0;
+	bool takets;
+	int slot;
 
 	/* The clone, if there, was made by dsa_skb_tx_timestamp */
 	clone = DSA_SKB_CB(skb)->clone;
+	takets = !!clone;
 
-	sja1105_mgmt_xmit(ds, port, slot, skb, !!clone);
+	if (takets) {
+		int rc = down_interruptible(&sp->tstamp_sem);
+		if (rc) {
+			dev_err(ds->dev, "Taking TX tstamp sem failed: %d\n",
+				rc);
+			return NETDEV_TX_OK;
+		}
+		tsreg = sp->tstamp_sem.count;
+	}
 
-	if (!clone)
-		goto out;
+	mutex_lock(&priv->mgmt_lock);
 
-	sja1105_ptp_txtstamp_skb(ds, port, clone);
+	slot = fls(priv->mgmt_slots);
 
-out:
+	/* Management route table is full */
+	if (slot == SJA1105_NUM_MGMT_SLOTS) {
+		for (slot = 0; slot < SJA1105_NUM_MGMT_SLOTS; slot++)
+			sja1105_poll_mgmt_route(priv, slot);
+
+		priv->mgmt_slots = 0;
+		slot = 0;
+	}
+
+	priv->mgmt_slots |= BIT(slot);
+
+	sja1105_mgmt_xmit(ds, port, slot, skb, takets, tsreg);
+
 	mutex_unlock(&priv->mgmt_lock);
+
+	if (takets) {
+		sja1105_poll_mgmt_route(priv, slot);
+
+		sja1105_ptp_txtstamp_skb(ds, port, tsreg, clone);
+
+		up(&sp->tstamp_sem);
+	}
+
 	return NETDEV_TX_OK;
 }
 
@@ -2366,6 +2385,7 @@ static int sja1105_probe(struct spi_device *spi)
 		dsa_to_port(ds, i)->priv = sp;
 		sp->dp = dsa_to_port(ds, i);
 		sp->data = tagger_data;
+		sema_init(&sp->tstamp_sem, SJA1105_NUM_PORT_TS_REGS);
 	}
 
 	return 0;

@@ -12,6 +12,8 @@
 #include <linux/mutex.h>
 #include "sja1105_static_config.h"
 
+#define SJA1105_NUM_PORT_TS_REGS	2
+#define SJA1105_NUM_MGMT_SLOTS		4
 #define SJA1105_NUM_PORTS		5
 #define SJA1105_NUM_TC			8
 #define SJA1105ET_FDB_BIN_SIZE		4
@@ -42,7 +44,7 @@ struct sja1105_regs {
 	u64 ptpclkrate;
 	u64 ptpclkcorp;
 	u64 ptpschtm;
-	u64 ptpegr_ts[SJA1105_NUM_PORTS];
+	u64 ptpegr_ts[SJA1105_NUM_PORTS * SJA1105_NUM_PORT_TS_REGS];
 	u64 pad_mii_tx[SJA1105_NUM_PORTS];
 	u64 pad_mii_id[SJA1105_NUM_PORTS];
 	u64 cgu_idiv[SJA1105_NUM_PORTS];
@@ -104,6 +106,7 @@ struct sja1105_private {
 	 * the switch doesn't confuse them with one another.
 	 */
 	struct mutex mgmt_lock;
+	unsigned long mgmt_slots;
 	struct sja1105_tagger_data tagger_data;
 	struct sja1105_ptp_data ptp_data;
 	struct sja1105_tas_data tas_data;

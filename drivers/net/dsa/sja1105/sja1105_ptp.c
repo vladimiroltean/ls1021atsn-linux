@@ -268,10 +268,12 @@ static u64 sja1105_tstamp_reconstruct(struct dsa_switch *ds, u64 now,
  * To have common code for E/T and P/Q/R/S for reading the timestamp,
  * we need to juggle with the offset and the bit indices.
  */
-static int sja1105_ptpegr_ts_poll(struct dsa_switch *ds, int port, u64 *ts)
+static int sja1105_ptpegr_ts_poll(struct dsa_switch *ds, int port, int tsreg,
+				  u64 *ts)
 {
 	struct sja1105_private *priv = ds->priv;
 	const struct sja1105_regs *regs = priv->info->regs;
+	int n = port * SJA1105_NUM_PORT_TS_REGS + tsreg;
 	int tstamp_bit_start, tstamp_bit_end;
 	int timeout = 10;
 	u8 packed_buf[8];
@@ -279,7 +281,7 @@ static int sja1105_ptpegr_ts_poll(struct dsa_switch *ds, int port, u64 *ts)
 	int rc;
 
 	do {
-		rc = sja1105_xfer_buf(priv, SPI_READ, regs->ptpegr_ts[port],
+		rc = sja1105_xfer_buf(priv, SPI_READ, regs->ptpegr_ts[n],
 				      packed_buf, priv->info->ptpegr_ts_bytes);
 		if (rc < 0)
 			return rc;
@@ -618,7 +620,7 @@ void sja1105_ptp_clock_unregister(struct dsa_switch *ds)
 	ptp_data->clock = NULL;
 }
 
-void sja1105_ptp_txtstamp_skb(struct dsa_switch *ds, int port,
+void sja1105_ptp_txtstamp_skb(struct dsa_switch *ds, int port, int tsreg,
 			      struct sk_buff *skb)
 {
 	struct sja1105_private *priv = ds->priv;
@@ -638,7 +640,7 @@ void sja1105_ptp_txtstamp_skb(struct dsa_switch *ds, int port,
 		goto out;
 	}
 
-	rc = sja1105_ptpegr_ts_poll(ds, port, &ts);
+	rc = sja1105_ptpegr_ts_poll(ds, port, tsreg, &ts);
 	if (rc < 0) {
 		dev_err(ds->dev, "timed out polling for tstamp\n");
 		kfree_skb(skb);
