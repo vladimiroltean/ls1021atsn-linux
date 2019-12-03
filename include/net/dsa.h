@@ -226,7 +226,7 @@ struct dsa_link {
 	struct list_head list;
 };
 
-void dsa_debug_ptp(struct sk_buff *skb, const char *func, int line);
+void dsa_debug_ptp(struct sk_buff *skb, const char *func);
 
 struct dsa_switch {
 	bool setup;

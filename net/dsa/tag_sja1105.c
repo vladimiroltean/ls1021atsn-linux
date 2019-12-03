@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019, Vladimir Oltean <olteanv@gmail.com>
  */
+#include <trace/events/sja1105.h>
 #include <linux/if_vlan.h>
 #include <linux/dsa/sja1105.h>
 #include <linux/dsa/8021q.h>
@@ -23,14 +24,6 @@ static inline bool sja1105_is_link_local(const struct sk_buff *skb)
 		return true;
 	return false;
 }
-
-struct sja1105_meta {
-	u64 tstamp;
-	u64 dmac_byte_4;
-	u64 dmac_byte_3;
-	u64 source_port;
-	u64 switch_id;
-};
 
 static void sja1105_meta_unpack(const struct sk_buff *skb,
 				struct sja1105_meta *meta)
@@ -184,6 +177,7 @@ static struct sk_buff
 		 * from freeing the skb.
 		 */
 		sp->data->stampable_skb = skb_get(skb);
+		trace_sja1105_stampable_skb(sp->data->stampable_skb);
 		spin_unlock(&sp->data->meta_lock);
 
 		if (skb_to_free)
@@ -211,6 +205,8 @@ static struct sk_buff
 
 		stampable_skb = sp->data->stampable_skb;
 		sp->data->stampable_skb = NULL;
+
+		trace_sja1105_meta(stampable_skb, meta);
 
 		/* Was this a meta frame instead of the link-local
 		 * that we were expecting?

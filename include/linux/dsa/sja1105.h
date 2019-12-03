@@ -52,6 +52,14 @@ struct sja1105_port {
 	bool hwts_tx_en;
 };
 
+struct sja1105_meta {
+	u64 tstamp;
+	u64 dmac_byte_4;
+	u64 dmac_byte_3;
+	u64 source_port;
+	u64 switch_id;
+};
+
 bool sja1105_can_use_vlan_as_tags(struct dsa_port *dp);
 
 #endif /* _NET_DSA_SJA1105_H */

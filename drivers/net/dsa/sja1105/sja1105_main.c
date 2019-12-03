@@ -24,6 +24,9 @@
 #include "sja1105.h"
 #include "sja1105_tas.h"
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/sja1105.h>
+
 static void sja1105_hw_reset(struct gpio_desc *gpio, unsigned int pulse_len,
 			     unsigned int startup_delay)
 {
@@ -1964,6 +1967,8 @@ static void sja1105_poll_mgmt_route(struct sja1105_private *priv, int slot)
 	int timeout = 100;
 	int rc;
 
+	trace_sja1105_poll_mgmt_route_start(slot);
+
 	/* Wait until the switch has processed the frame */
 	do {
 		rc = sja1105_dynamic_config_read(priv, BLK_IDX_MGMT_ROUTE,
@@ -1982,6 +1987,8 @@ static void sja1105_poll_mgmt_route(struct sja1105_private *priv, int slot)
 			break;
 		usleep_range(100, 500);
 	} while (--timeout);
+
+	trace_sja1105_poll_mgmt_route_end(slot);
 
 	if (!timeout) {
 		/* Clean up the management route so that a follow-up
@@ -2010,6 +2017,8 @@ static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
 	mgmt_route.enfport = 1;
 	mgmt_route.tsreg = tsreg;
 	mgmt_route.takets = takets;
+
+	trace_sja1105_mgmt_route(skb, slot);
 
 	rc = sja1105_dynamic_config_write(priv, BLK_IDX_MGMT_ROUTE,
 					  slot, &mgmt_route, true);
@@ -2052,6 +2061,8 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 			return NETDEV_TX_OK;
 		}
 		tsreg = sp->tstamp_sem.count;
+
+		trace_sja1105_txtstamp_start(clone, tsreg);
 	}
 
 	mutex_lock(&priv->mgmt_lock);

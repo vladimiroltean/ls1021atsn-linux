@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019, Vladimir Oltean <olteanv@gmail.com>
  */
+#include <trace/events/sja1105.h>
 #include <linux/ptp_classify.h>
 #include <linux/spi/spi.h>
 #include "sja1105.h"
@@ -325,6 +326,26 @@ static int sja1105_ptpclkval_read(struct sja1105_private *priv, u64 *ticks,
 				ptp_sts);
 }
 
+static int sja1105_ptpclkval_cached_read(struct sja1105_private *priv,
+					 u64 *ticks, ktime_t request)
+{
+	struct sja1105_ptp_data *ptp_data = &priv->ptp_data;
+	struct ptp_system_timestamp ptp_sts;
+	int rc;
+
+	if (ptp_data->last_ptpclkval_readout &&
+	    ktime_before(request, ptp_data->last_ptpclkval_readout)) {
+		*ticks = ptp_data->last_ptpclkval_ticks;
+		return 0;
+	}
+
+	rc = sja1105_ptpclkval_read(priv, ticks, &ptp_sts);
+	ptp_data->last_ptpclkval_readout = ns_to_ktime(timespec64_to_ns(&ptp_sts.pre_ts));
+	ptp_data->last_ptpclkval_ticks = *ticks;
+
+	return rc;
+}
+
 /* Caller must hold ptp_data->lock */
 static int sja1105_ptpclkval_write(struct sja1105_private *priv, u64 ticks,
 				   struct ptp_system_timestamp *ptp_sts)
@@ -348,7 +369,8 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 	mutex_lock(&ptp_data->lock);
 
 	while ((skb = skb_dequeue(&ptp_data->skb_rxtstamp_queue)) != NULL) {
-		rc = sja1105_ptpclkval_read(priv, &ticks, NULL);
+		rc = sja1105_ptpclkval_cached_read(priv, &ticks,
+						   ktime_get_real());
 		if (rc < 0) {
 			dev_err(ds->dev, "Failed to read PTP clock: %d\n", rc);
 			kfree_skb(skb);
@@ -358,6 +380,7 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 		shwt = skb_hwtstamps(skb);
 		ts = sja1105_tstamp_reconstruct(ds, ticks, shwt->hwtstamp);
 		shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
+		trace_sja1105_rxtstamp_end(skb, shwt->hwtstamp);
 		netif_rx_ni(skb);
 	}
 out:
@@ -376,6 +399,8 @@ bool sja1105_port_rxtstamp(struct dsa_switch *ds, int port,
 
 	if (!test_bit(SJA1105_HWTS_RX_EN, &priv->tagger_data.state))
 		return false;
+
+	trace_sja1105_rxtstamp_start(skb);
 
 	/* We need to read the full PTP clock to reconstruct the Rx
 	 * timestamp. For that we need a sleepable context.
@@ -633,7 +658,7 @@ void sja1105_ptp_txtstamp_skb(struct dsa_switch *ds, int port, int tsreg,
 
 	mutex_lock(&ptp_data->lock);
 
-	rc = sja1105_ptpclkval_read(priv, &ticks, NULL);
+	rc = sja1105_ptpclkval_cached_read(priv, &ticks, ktime_get_real());
 	if (rc < 0) {
 		dev_err(ds->dev, "Failed to read PTP clock: %d\n", rc);
 		kfree_skb(skb);
@@ -650,6 +675,7 @@ void sja1105_ptp_txtstamp_skb(struct dsa_switch *ds, int port, int tsreg,
 	ts = sja1105_tstamp_reconstruct(ds, ticks, ts);
 
 	shwt.hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
+	trace_sja1105_txtstamp_end(skb, shwt.hwtstamp);
 	skb_complete_tx_timestamp(skb, &shwt);
 
 out:

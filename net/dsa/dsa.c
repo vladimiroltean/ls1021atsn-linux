@@ -20,6 +20,7 @@
 #include <linux/phy_fixed.h>
 #include <linux/ptp_classify.h>
 #include <linux/etherdevice.h>
+#include <trace/events/skb.h>
 
 #include "dsa_priv.h"
 
@@ -237,45 +238,21 @@ static u8 *parse_ptp_header(struct sk_buff *skb, unsigned int type)
 	return data + offset;
 }
 
-void dsa_debug_ptp(struct sk_buff *skb, const char *func, int line)
+void dsa_debug_ptp(struct sk_buff *skb, const char *func)
 {
-	struct ethhdr *ether = eth_hdr(skb);
-	static int last_msgtype;
-	static int last_seqid;
-	__be16 *seqid_ptr;
-	int seqid;
-	u8 msgtype;
-	u8 *hdr;
+	struct ethhdr *ether;
+
+	if (!unlikely(skb)) {
+		WARN_ON(1);
+		return;
+	}
+
+	ether = eth_hdr(skb);
 
 	if (ntohs(ether->h_proto) != ETH_P_1588)
 		return;
 
-	hdr = parse_ptp_header(skb, PTP_CLASS_L2);
-	if (!hdr) {
-		printk(KERN_ERR "%s %d: invalid ptp header\n", func, line);
-		return;
-	}
-
-	seqid_ptr = (__be16 *)(hdr + OFF_PTP_SEQUENCE_ID);
-	seqid = ntohs(*seqid_ptr);
-	msgtype = hdr[0] & 0xf;
-	switch (msgtype) {
-	case 0:
-		if (last_msgtype != 8 || seqid != last_seqid + 1)
-			printk(KERN_ERR "%s %d cpu %d: sync %d came after another %s (%d)\n",
-				func, line, smp_processor_id(), seqid, last_msgtype == 0 ? "sync" : "follow-up", last_seqid);
-		break;
-	case 8:
-		if (last_msgtype != 0 || seqid != last_seqid)
-			printk(KERN_ERR "%s %d cpu %d: follow-up %d came after another %s (%d)\n",
-				func, line, smp_processor_id(), seqid, last_msgtype == 0 ? "sync" : "follow-up", last_seqid);
-		break;
-	default:
-		return;
-	}
-
-	last_seqid = seqid;
-	last_msgtype = msgtype;
+	trace_ptp_skb(skb, func);
 }
 
 static int dsa_switch_rcv(struct sk_buff *skb, struct net_device *dev,
