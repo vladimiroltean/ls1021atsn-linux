@@ -366,7 +366,7 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 	u64 ticks, ts;
 	int rc;
 
-	mutex_lock(&ptp_data->lock);
+	/*mutex_lock(&ptp_data->lock);*/
 
 	while ((skb = skb_dequeue(&ptp_data->skb_rxtstamp_queue)) != NULL) {
 		rc = sja1105_ptpclkval_cached_read(priv, &ticks,
@@ -384,7 +384,7 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 		netif_rx_ni(skb);
 	}
 out:
-	mutex_unlock(&ptp_data->lock);
+	/*mutex_unlock(&ptp_data->lock);*/
 
 	/* Don't restart */
 	return -1;
@@ -656,7 +656,7 @@ void sja1105_ptp_txtstamp_skb(struct dsa_switch *ds, int port, int tsreg,
 
 	skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 
-	mutex_lock(&ptp_data->lock);
+	/*mutex_lock(&ptp_data->lock);*/
 
 	rc = sja1105_ptpclkval_cached_read(priv, &ticks, ktime_get_real());
 	if (rc < 0) {
@@ -679,5 +679,6 @@ void sja1105_ptp_txtstamp_skb(struct dsa_switch *ds, int port, int tsreg,
 	skb_complete_tx_timestamp(skb, &shwt);
 
 out:
-	mutex_unlock(&ptp_data->lock);
+	;
+	/*mutex_unlock(&ptp_data->lock);*/
 }

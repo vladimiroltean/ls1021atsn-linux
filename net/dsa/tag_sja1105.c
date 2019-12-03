@@ -195,12 +195,13 @@ static struct sk_buff
 	} else if (is_meta) {
 		struct sk_buff *stampable_skb;
 
+#if 0
 		/* Drop the meta frame if we're not in the right state
 		 * to process it.
 		 */
 		if (!test_bit(SJA1105_HWTS_RX_EN, &sp->data->state))
 			return NULL;
-
+#endif
 		spin_lock(&sp->data->meta_lock);
 
 		stampable_skb = sp->data->stampable_skb;
