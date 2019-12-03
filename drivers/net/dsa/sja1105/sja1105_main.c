@@ -2085,6 +2085,7 @@ static int sja1105_probe(struct spi_device *spi)
 
 	/* Configure the SPI bus */
 	spi->bits_per_word = 32;
+	spi->rt = true;
 	rc = spi_setup(spi);
 	if (rc < 0) {
 		dev_err(dev, "Could not init SPI\n");
