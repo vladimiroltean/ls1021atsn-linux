@@ -89,6 +89,7 @@ static int sja1105_xfer(const struct sja1105_private *priv,
 		u8 *hdr_buf = sja1105_hdr_buf(hdr_bufs, i);
 		struct spi_transfer *ptp_sts_xfer;
 		struct sja1105_spi_message msg;
+		int k;
 
 		/* Populate the transfer's header buffer */
 		msg.address = chunk.reg_addr;
@@ -100,14 +101,26 @@ static int sja1105_xfer(const struct sja1105_private *priv,
 			msg.read_count = 0;
 		sja1105_spi_message_pack(hdr_buf, &msg);
 		hdr_xfer->tx_buf = hdr_buf;
-		hdr_xfer->len = SJA1105_SIZE_SPI_MSG_HEADER;
+		hdr_xfer->len = SJA1105_SIZE_SPI_MSG_HEADER; // / 4;
+
+		for (k = 0; k < SJA1105_SIZE_SPI_MSG_HEADER; k += 4) {
+			u16 tmp = *(u16 *)(hdr_buf + k);
+
+			*(u16 *)(hdr_buf + k) = be16_to_cpu(tmp);
+		}
 
 		/* Populate the transfer's data buffer */
 		if (rw == SPI_READ)
 			chunk_xfer->rx_buf = chunk.buf;
 		else
 			chunk_xfer->tx_buf = chunk.buf;
-		chunk_xfer->len = chunk.len;
+		chunk_xfer->len = chunk.len; // / 4;
+
+		for (k = 0; k < SJA1105_SIZE_SPI_MSG_HEADER; k += 4) {
+			u16 tmp = *(u16 *)(chunk.buf + k);
+
+			*(u16 *)(chunk.buf + k) = be16_to_cpu(tmp);
+		}
 
 		/* Request timestamping for the transfer. Instead of letting
 		 * callers specify which byte they want to timestamp, we can
