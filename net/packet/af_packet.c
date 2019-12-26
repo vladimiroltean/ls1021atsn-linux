@@ -88,6 +88,8 @@
 #endif
 #include <linux/bpf.h>
 #include <net/compat.h>
+#include <trace/events/sja1105.h>
+#include <net/dsa.h>
 
 #include "internal.h"
 
@@ -2129,6 +2131,7 @@ static int packet_rcv(struct sk_buff *skb, struct net_device *dev,
 	sock_skb_set_dropcount(sk, skb);
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	spin_unlock(&sk->sk_receive_queue.lock);
+	sja1105_stack_ptp(skb, sk, __func__);
 	sk->sk_data_ready(sk);
 	return 0;
 
@@ -4148,21 +4151,29 @@ static __poll_t packet_poll(struct file *file, struct socket *sock,
 	struct sock *sk = sock->sk;
 	struct packet_sock *po = pkt_sk(sk);
 	__poll_t mask = datagram_poll(file, sock, wait);
+	bool readable = false, writable = false;
 
 	spin_lock_bh(&sk->sk_receive_queue.lock);
 	if (po->rx_ring.pg_vec) {
 		if (!packet_previous_rx_frame(po, &po->rx_ring,
-			TP_STATUS_KERNEL))
+			TP_STATUS_KERNEL)) {
 			mask |= EPOLLIN | EPOLLRDNORM;
+			readable = true;
+		}
 	}
 	packet_rcv_try_clear_pressure(po);
 	spin_unlock_bh(&sk->sk_receive_queue.lock);
 	spin_lock_bh(&sk->sk_write_queue.lock);
 	if (po->tx_ring.pg_vec) {
-		if (packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE))
+		if (packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE)) {
 			mask |= EPOLLOUT | EPOLLWRNORM;
+			writable = true;
+		}
 	}
 	spin_unlock_bh(&sk->sk_write_queue.lock);
+
+	trace_sja1105_sock_poll(sk, file, mask, readable, writable, false, __func__);
+
 	return mask;
 }
 

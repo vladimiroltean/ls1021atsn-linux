@@ -24,6 +24,9 @@
 #include "sja1105.h"
 #include "sja1105_tas.h"
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/sja1105.h>
+
 static void sja1105_hw_reset(struct gpio_desc *gpio, unsigned int pulse_len,
 			     unsigned int startup_delay)
 {
@@ -1778,6 +1781,7 @@ static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
 	mgmt_route.tsreg = 0;
 	mgmt_route.takets = takets;
 
+	trace_sja1105_poll_mgmt_route_start(skb, slot);
 	rc = sja1105_dynamic_config_write(priv, BLK_IDX_MGMT_ROUTE,
 					  slot, &mgmt_route, true);
 	if (rc < 0) {
@@ -1816,6 +1820,8 @@ static int sja1105_mgmt_xmit(struct dsa_switch *ds, int port, int slot,
 		dev_err_ratelimited(priv->ds->dev, "xmit timed out\n");
 	}
 
+	trace_sja1105_poll_mgmt_route_end(skb, slot);
+
 	return NETDEV_TX_OK;
 }
 
@@ -1849,6 +1855,13 @@ static netdev_tx_t sja1105_port_deferred_xmit(struct dsa_switch *ds, int port,
 
 	/* The clone, if there, was made by dsa_skb_tx_timestamp */
 	clone = DSA_SKB_CB(skb)->clone;
+	if (clone) {
+		/* Prepare these for the txtstamp_start tracepoint */
+		DSA_SKB_CB(clone)->clone = skb;
+		DSA_SKB_CB(clone)->ptp_type = DSA_SKB_CB(skb)->ptp_type;
+
+		trace_sja1105_txtstamp_start(clone, 0);
+	}
 
 	sja1105_mgmt_xmit(ds, port, slot, skb, !!clone);
 

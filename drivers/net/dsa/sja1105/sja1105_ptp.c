@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2019, Vladimir Oltean <olteanv@gmail.com>
  */
+#include <trace/events/sja1105.h>
+#include <linux/ptp_classify.h>
 #include <linux/spi/spi.h>
 #include "sja1105.h"
 
@@ -355,9 +357,12 @@ static int sja1105_ptpclkval_read(struct sja1105_private *priv, u64 *ticks,
 				  struct ptp_system_timestamp *ptp_sts)
 {
 	const struct sja1105_regs *regs = priv->info->regs;
+	int rc;
 
-	return sja1105_xfer_u64(priv, SPI_READ, regs->ptpclkval, ticks,
-				ptp_sts);
+	rc = sja1105_xfer_u64(priv, SPI_READ, regs->ptpclkval, ticks,
+			      ptp_sts);
+	trace_sja1105_ptpclkval_read(*ticks, ptp_sts);
+	return rc;
 }
 
 /* Caller must hold ptp_data->lock */
@@ -365,9 +370,13 @@ static int sja1105_ptpclkval_write(struct sja1105_private *priv, u64 ticks,
 				   struct ptp_system_timestamp *ptp_sts)
 {
 	const struct sja1105_regs *regs = priv->info->regs;
+	int rc;
 
-	return sja1105_xfer_u64(priv, SPI_WRITE, regs->ptpclkval, &ticks,
-				ptp_sts);
+	rc = sja1105_xfer_u64(priv, SPI_WRITE, regs->ptpclkval, &ticks,
+			      ptp_sts);
+	trace_sja1105_ptpclkval_write(ticks, priv->ptp_data.cmd.ptpclkadd,
+				      ptp_sts);
+	return rc;
 }
 
 static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
@@ -397,6 +406,7 @@ static long sja1105_rxtstamp_work(struct ptp_clock_info *ptp)
 		ts = sja1105_tstamp_reconstruct(ds, ticks, ts);
 
 		shwt->hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
+		trace_sja1105_rxtstamp_end(skb, shwt->hwtstamp);
 		netif_rx_ni(skb);
 	}
 
@@ -415,6 +425,10 @@ bool sja1105_port_rxtstamp(struct dsa_switch *ds, int port,
 
 	if (!test_bit(SJA1105_HWTS_RX_EN, &priv->tagger_data.state))
 		return false;
+
+	DSA_SKB_CB(skb)->ptp_type = type;
+
+	trace_sja1105_rxtstamp_start(skb);
 
 	/* We need to read the full PTP clock to reconstruct the Rx
 	 * timestamp. For that we need a sleepable context.
@@ -436,6 +450,8 @@ bool sja1105_port_txtstamp(struct dsa_switch *ds, int port,
 
 	if (!sp->hwts_tx_en)
 		return false;
+
+	DSA_SKB_CB(skb)->ptp_type = type;
 
 	return true;
 }
@@ -509,6 +525,7 @@ static int sja1105_ptp_mode_set(struct sja1105_private *priv,
 		return 0;
 
 	ptp_data->cmd.ptpclkadd = mode;
+	trace_sja1105_ptp_mode_set(mode);
 
 	return sja1105_ptp_commit(priv->ds, &ptp_data->cmd, SPI_WRITE);
 }
@@ -576,6 +593,8 @@ static int sja1105_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 	sja1105_tas_adjfreq(priv->ds);
 
 	mutex_unlock(&ptp_data->lock);
+
+	trace_sja1105_ptpclkrate(clkrate32);
 
 	return rc;
 }
@@ -689,6 +708,7 @@ void sja1105_ptp_txtstamp_skb(struct dsa_switch *ds, int port,
 	ts = sja1105_tstamp_reconstruct(ds, ticks, ts);
 
 	shwt.hwtstamp = ns_to_ktime(sja1105_ticks_to_ns(ts));
+	trace_sja1105_txtstamp_end(skb, shwt.hwtstamp);
 	skb_complete_tx_timestamp(skb, &shwt);
 
 out:

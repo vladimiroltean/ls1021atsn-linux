@@ -9,6 +9,7 @@
 
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
+#include <linux/ptp_classify.h>
 #include <net/dsa.h>
 
 #define ETH_P_SJA1105				ETH_P_DSA_8021Q
@@ -58,5 +59,28 @@ struct sja1105_port {
 	bool hwts_tx_en;
 	int mgmt_slot;
 };
+
+struct sja1105_meta {
+	u64 tstamp;
+	u64 dmac_byte_4;
+	u64 dmac_byte_3;
+	u64 source_port;
+	u64 switch_id;
+};
+
+static inline unsigned char *skb_ptp_header(const struct sk_buff *skb)
+{
+	unsigned int ptp_type = DSA_SKB_CB(skb)->ptp_type;
+	u8 *data = skb_mac_header(skb);
+	unsigned int offset = 0;
+
+	if (ptp_type & PTP_CLASS_VLAN)
+		offset += VLAN_HLEN;
+
+	if ((ptp_type & PTP_CLASS_PMASK) == PTP_CLASS_L2)
+		offset += ETH_HLEN;
+
+	return data + offset;
+}
 
 #endif /* _NET_DSA_SJA1105_H */

@@ -59,7 +59,9 @@
 #include <net/sock.h>
 #include <net/tcp_states.h>
 #include <trace/events/skb.h>
+#include <trace/events/sja1105.h>
 #include <net/busy_poll.h>
+#include <net/dsa.h>
 
 #include "datagram.h"
 
@@ -201,6 +203,7 @@ struct sk_buff *__skb_try_recv_from_queue(struct sock *sk,
 				destructor(sk, skb);
 		}
 		*off = _off;
+		sja1105_stack_ptp(skb, sk, __func__);
 		return skb;
 	}
 	return NULL;
@@ -760,6 +763,7 @@ EXPORT_SYMBOL(skb_copy_and_csum_datagram_msg);
 __poll_t datagram_poll(struct file *file, struct socket *sock,
 			   poll_table *wait)
 {
+	bool readable, writable, exceptional = false;
 	struct sock *sk = sock->sk;
 	__poll_t mask;
 
@@ -767,9 +771,11 @@ __poll_t datagram_poll(struct file *file, struct socket *sock,
 	mask = 0;
 
 	/* exceptional events? */
-	if (sk->sk_err || !skb_queue_empty_lockless(&sk->sk_error_queue))
+	if (sk->sk_err || !skb_queue_empty_lockless(&sk->sk_error_queue)) {
 		mask |= EPOLLERR |
 			(sock_flag(sk, SOCK_SELECT_ERR_QUEUE) ? EPOLLPRI : 0);
+		exceptional = true;
+	}
 
 	if (sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= EPOLLRDHUP | EPOLLIN | EPOLLRDNORM;
@@ -777,7 +783,8 @@ __poll_t datagram_poll(struct file *file, struct socket *sock,
 		mask |= EPOLLHUP;
 
 	/* readable? */
-	if (!skb_queue_empty_lockless(&sk->sk_receive_queue))
+	readable = !skb_queue_empty_lockless(&sk->sk_receive_queue);
+	if (readable)
 		mask |= EPOLLIN | EPOLLRDNORM;
 
 	/* Connection-based need to check for termination and startup */
@@ -790,10 +797,13 @@ __poll_t datagram_poll(struct file *file, struct socket *sock,
 	}
 
 	/* writable? */
-	if (sock_writeable(sk))
+	writable = sock_writeable(sk);
+	if (writable)
 		mask |= EPOLLOUT | EPOLLWRNORM | EPOLLWRBAND;
 	else
 		sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
+
+	trace_sja1105_sock_poll(sk, file, mask, readable, writable, exceptional, __func__);
 
 	return mask;
 }

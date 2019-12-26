@@ -33,7 +33,7 @@
 #include <linux/vmalloc.h>
 
 #include <linux/uaccess.h>
-
+#include <trace/events/sja1105.h>
 
 /*
  * Estimate expected accuracy in ns from a timeval.
@@ -865,6 +865,7 @@ static inline __poll_t do_pollfd(struct pollfd *pollfd, poll_table *pwait,
 out:
 	/* ... and so does ->revents */
 	pollfd->revents = mangle_poll(mask);
+	/*trace_sja1105_select_poll(f.file, mask, pollfd->revents, __func__);*/
 	return mask;
 }
 
@@ -1005,9 +1006,23 @@ static int do_sys_poll(struct pollfd __user *ufds, unsigned int nfds,
 		struct pollfd *fds = walk->entries;
 		int j;
 
-		for (j = 0; j < walk->len; j++, ufds++)
+		for (j = 0; j < walk->len; j++, ufds++) {
+			short revents;
+			int fd;
+
 			if (__put_user(fds[j].revents, &ufds->revents))
 				goto out_fds;
+			if (get_user(fd, (int __user *)&ufds->fd)) {
+				err = -EFAULT;
+				goto out_fds;
+			}
+			if (get_user(revents, (short __user *)&ufds->revents)) {
+				err = -EFAULT;
+				goto out_fds;
+			}
+			if (revents)
+				trace_sja1105_poll_put_mask(ufds, fd, revents);
+		}
   	}
 
 	err = fdcount;

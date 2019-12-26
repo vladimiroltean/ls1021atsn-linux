@@ -34,6 +34,8 @@ struct sja1105_ptp_data {
 	struct ptp_clock_info caps;
 	struct ptp_clock *clock;
 	struct sja1105_ptp_cmd cmd;
+	ktime_t last_ptpclkval_readout;
+	u64 last_ptpclkval_ticks;
 	/* Serializes all operations on the PTP hardware clock */
 	struct mutex lock;
 };

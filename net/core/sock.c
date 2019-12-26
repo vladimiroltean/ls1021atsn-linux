@@ -137,6 +137,7 @@
 
 #include <net/tcp.h>
 #include <net/busy_poll.h>
+#include <net/dsa.h>
 
 static DEFINE_MUTEX(proto_list_mutex);
 static LIST_HEAD(proto_list);
@@ -319,6 +320,8 @@ int __sk_backlog_rcv(struct sock *sk, struct sk_buff *skb)
 	int ret;
 	unsigned int noreclaim_flag;
 
+	sja1105_stack_ptp(skb, sk, __func__);
+
 	/* these should have been dropped before queueing */
 	BUG_ON(!sock_flag(sk, SOCK_MEMALLOC));
 
@@ -450,6 +453,7 @@ int __sock_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
 	unsigned long flags;
 	struct sk_buff_head *list = &sk->sk_receive_queue;
 
+	sja1105_stack_ptp(skb, sk, __func__);
 	if (atomic_read(&sk->sk_rmem_alloc) >= sk->sk_rcvbuf) {
 		atomic_inc(&sk->sk_drops);
 		trace_sock_rcvqueue_full(sk, skb);
@@ -499,6 +503,8 @@ int __sk_receive_skb(struct sock *sk, struct sk_buff *skb,
 
 	if (sk_filter_trim_cap(sk, skb, trim_cap))
 		goto discard_and_relse;
+
+	sja1105_stack_ptp(skb, sk, __func__);
 
 	skb->dev = NULL;
 
@@ -2201,6 +2207,7 @@ static long sock_wait_for_wmem(struct sock *sk, long timeo)
 		timeo = schedule_timeout(timeo);
 	}
 	finish_wait(sk_sleep(sk), &wait);
+	sja1105_stack_ptp(NULL, sk, __func__);
 	return timeo;
 }
 
@@ -2410,6 +2417,7 @@ static void __lock_sock(struct sock *sk)
 		prepare_to_wait_exclusive(&sk->sk_lock.wq, &wait,
 					TASK_UNINTERRUPTIBLE);
 		spin_unlock_bh(&sk->sk_lock.slock);
+		sja1105_stack_ptp(NULL, sk, __func__);
 		schedule();
 		spin_lock_bh(&sk->sk_lock.slock);
 		if (!sock_owned_by_user(sk))

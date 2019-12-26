@@ -91,6 +91,7 @@ struct dsa_device_ops {
 struct dsa_skb_cb {
 	struct sk_buff *clone;
 	bool deferred_xmit;
+	unsigned int ptp_type;
 };
 
 struct __dsa_skb_cb {
@@ -226,6 +227,8 @@ struct dsa_link {
 	struct dsa_port *link_dp;
 	struct list_head list;
 };
+
+void sja1105_stack_ptp(struct sk_buff *skb, struct sock *sk, const char *func);
 
 struct dsa_switch {
 	bool setup;

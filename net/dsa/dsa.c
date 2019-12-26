@@ -20,6 +20,7 @@
 #include <linux/phy_fixed.h>
 #include <linux/ptp_classify.h>
 #include <linux/etherdevice.h>
+#include <trace/events/sja1105.h>
 
 #include "dsa_priv.h"
 
@@ -199,6 +200,26 @@ static bool dsa_skb_defer_rx_timestamp(struct dsa_slave_priv *p,
 
 	return false;
 }
+
+void sja1105_stack_ptp(struct sk_buff *skb, struct sock *sk, const char *func)
+{
+	static struct sk_buff *last_skb;
+	struct ethhdr *ether;
+
+	if (skb)
+		last_skb = skb;
+
+	if (!last_skb)
+		return;
+
+	ether = eth_hdr(last_skb);
+
+	if (ntohs(ether->h_proto) != ETH_P_1588)
+		return;
+
+	trace_sja1105_stack_ptp(last_skb, sk, func);
+}
+EXPORT_SYMBOL_GPL(sja1105_stack_ptp);
 
 static int dsa_switch_rcv(struct sk_buff *skb, struct net_device *dev,
 			  struct packet_type *pt, struct net_device *unused)

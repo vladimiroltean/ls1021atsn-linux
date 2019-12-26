@@ -75,6 +75,7 @@
 #include <linux/capability.h>
 #include <linux/user_namespace.h>
 #include <linux/indirect_call_wrapper.h>
+#include <net/dsa.h>
 
 #include "datagram.h"
 
@@ -4427,6 +4428,7 @@ int sock_queue_err_skb(struct sock *sk, struct sk_buff *skb)
 	/* before exiting rcu section, make sure dst is refcounted */
 	skb_dst_force(skb);
 
+	sja1105_stack_ptp(skb, sk, __func__);
 	skb_queue_tail(&sk->sk_error_queue, skb);
 	if (!sock_flag(sk, SOCK_DEAD))
 		sk->sk_error_report(sk);
@@ -4455,6 +4457,7 @@ struct sk_buff *sock_dequeue_err_skb(struct sock *sk)
 			sk->sk_err = SKB_EXT_ERR(skb_next)->ee.ee_origin;
 	}
 	spin_unlock_irqrestore(&q->lock, flags);
+	sja1105_stack_ptp(skb, sk, __func__);
 
 	if (is_icmp_err_skb(skb) && !icmp_next)
 		sk->sk_err = 0;
