@@ -119,8 +119,8 @@ static int sja1105_xfer(const struct sja1105_private *priv,
 			ptp_sts_xfer = hdr_xfer;
 		else
 			ptp_sts_xfer = chunk_xfer;
-		ptp_sts_xfer->ptp_sts_word_pre = ptp_sts_xfer->len - 1;
-		ptp_sts_xfer->ptp_sts_word_post = ptp_sts_xfer->len - 1;
+		ptp_sts_xfer->ptp_sts_word_pre = (ptp_sts_xfer->len - 1) / 4;
+		ptp_sts_xfer->ptp_sts_word_post = (ptp_sts_xfer->len - 1) / 4;
 		ptp_sts_xfer->ptp_sts = ptp_sts;
 
 		/* Calculate next chunk */
