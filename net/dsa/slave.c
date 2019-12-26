@@ -518,7 +518,6 @@ static netdev_tx_t dsa_slave_xmit(struct sk_buff *skb, struct net_device *dev)
 	s->tx_bytes += skb->len;
 	u64_stats_update_end(&s->syncp);
 
-	DSA_SKB_CB(skb)->deferred_xmit = false;
 	DSA_SKB_CB(skb)->clone = NULL;
 
 	/* Identify PTP protocol packets, clone them, and pass them to the
@@ -531,8 +530,7 @@ static netdev_tx_t dsa_slave_xmit(struct sk_buff *skb, struct net_device *dev)
 	 */
 	nskb = p->xmit(skb, dev);
 	if (!nskb) {
-		if (!DSA_SKB_CB(skb)->deferred_xmit)
-			kfree_skb(skb);
+		kfree_skb(skb);
 		return NETDEV_TX_OK;
 	}
 
@@ -543,10 +541,12 @@ void *dsa_defer_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
 
-	DSA_SKB_CB(skb)->deferred_xmit = true;
-
-	skb_queue_tail(&dp->xmit_queue, skb);
+	/* Increase refcount so the kfree_skb in dsa_slave_xmit
+	 * won't really free the packet.
+	 */
+	skb_queue_tail(&dp->xmit_queue, skb_get(skb));
 	schedule_work(&dp->xmit_work);
+
 	return NULL;
 }
 EXPORT_SYMBOL_GPL(dsa_defer_xmit);
