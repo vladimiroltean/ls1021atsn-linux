@@ -288,14 +288,4 @@ int dsa_port_setup_8021q_tagging(struct dsa_switch *ds, int port, bool enabled)
 }
 EXPORT_SYMBOL_GPL(dsa_port_setup_8021q_tagging);
 
-struct sk_buff *dsa_8021q_xmit(struct sk_buff *skb, struct net_device *netdev,
-			       u16 tpid, u16 tci)
-{
-	/* skb->data points at skb_mac_header, which
-	 * is fine for vlan_insert_tag.
-	 */
-	return vlan_insert_tag(skb, htons(tpid), tci);
-}
-EXPORT_SYMBOL_GPL(dsa_8021q_xmit);
-
 MODULE_LICENSE("GPL v2");
