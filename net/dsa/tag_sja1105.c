@@ -103,6 +103,8 @@ static struct sk_buff *sja1105_xmit(struct sk_buff *skb,
 	u16 tx_vid = dsa_8021q_tx_vid(dp->ds, dp->index);
 	u16 queue_mapping = skb_get_queue_mapping(skb);
 	u8 pcp = netdev_txq_to_tc(netdev, queue_mapping);
+	u16 tci = (pcp << VLAN_PRIO_SHIFT) | tx_vid;
+	u16 tpid = ETH_P_SJA1105;
 
 	/* Transmitting management traffic does not rely upon switch tagging,
 	 * but instead SPI-installed management routes. Part 2 of this
@@ -119,8 +121,10 @@ static struct sk_buff *sja1105_xmit(struct sk_buff *skb,
 	if (dsa_port_is_vlan_filtering(dp))
 		return skb;
 
-	return dsa_8021q_xmit(skb, netdev, ETH_P_SJA1105,
-			     ((pcp << VLAN_PRIO_SHIFT) | tx_vid));
+	/* skb->data points at skb_mac_header, which
+	 * is fine for vlan_insert_tag.
+	 */
+	return vlan_insert_tag(skb, htons(tpid), tci);
 }
 
 static void sja1105_transfer_meta(struct sk_buff *skb,
