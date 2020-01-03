@@ -414,7 +414,7 @@ static int sja1105_init_general_params(struct sja1105_private *priv)
 		 */
 		.casc_port = SJA1105_NUM_PORTS,
 		/* No TTEthernet */
-		.vllupformat = 0,
+		.vllupformat = SJA1105_VL_FORMAT_PSFP,
 		.vlmarker = 0,
 		.vlmask = 0,
 		/* Only update correctionField for 1-step PTP (L2 transport) */
@@ -536,6 +536,9 @@ static int sja1105_static_config_load(struct sja1105_private *priv,
 	if (rc < 0)
 		return rc;
 	rc = sja1105_init_general_params(priv);
+	if (rc < 0)
+		return rc;
+	rc = sja1105_init_virtual_links(priv);
 	if (rc < 0)
 		return rc;
 

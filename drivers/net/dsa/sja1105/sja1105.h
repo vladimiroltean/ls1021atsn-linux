@@ -215,4 +215,7 @@ size_t sja1105pqrs_mac_config_entry_packing(void *buf, void *entry_ptr,
 size_t sja1105_vl_lookup_entry_packing(void *buf, void *entry_ptr,
 				       enum packing_op op);
 
+/* From sja1105_vl.c */
+int sja1105_init_virtual_links(struct sja1105_private *priv);
+
 #endif
