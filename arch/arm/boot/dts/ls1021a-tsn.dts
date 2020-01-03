@@ -101,6 +101,17 @@
 	};
 };
 
+&dspi1 {
+	bus-num = <1>;
+	status = "okay";
+
+	spidev@1 {
+		compatible = "rohm,dh2228fv";
+		spi-max-frequency = <25000000>;
+		reg = <0x1>;
+	};
+};
+
 &enet0 {
 	tbi-handle = <&tbi0>;
 	phy-handle = <&sgmii_phy2>;
