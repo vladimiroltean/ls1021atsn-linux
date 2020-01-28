@@ -786,7 +786,7 @@
 						reg = <3>;
 					};
 					/* internal to-cpu ports */
-					port@4 {
+					switch_port4: port@4 {
 						reg = <4>;
 						ethernet = <&enetc_port2>;
 						phy-mode = "gmii";
@@ -796,7 +796,7 @@
 							full-duplex;
 						};
 					};
-					port@5 {
+					switch_port5: port@5 {
 						reg = <5>;
 						phy-mode = "gmii";
 						status = "disabled";

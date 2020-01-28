@@ -214,6 +214,10 @@
 	status = "disabled";
 };
 
+&enetc_port3 {
+	status = "okay";
+};
+
 &enetc_mdio_pf3 {
 	qsgmii_phy1: ethernet-phy@4 {
 		reg = <0x10>;
@@ -255,6 +259,15 @@
 	phy-handle = <&qsgmii_phy4>;
 	phy-connection-type = "qsgmii";
 	managed = "in-band-status";
+};
+
+&switch_port4 {
+	/delete-property/ ethernet;
+};
+
+&switch_port5 {
+	status = "okay";
+	ethernet = <&enetc_port3>;
 };
 
 &sai4 {
