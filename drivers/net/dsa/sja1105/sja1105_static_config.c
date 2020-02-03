@@ -16,14 +16,9 @@
  */
 void sja1105_pack(void *buf, const u64 *val, int start, int end, size_t len)
 {
-	u8 quirks = QUIRK_LSW32_IS_FIRST;
-	int rc;
+	int rc = packing(buf, (u64 *)val, start, end, len,
+			 PACK, QUIRK_LSW32_IS_FIRST);
 
-#if defined(__LITTLE_ENDIAN)
-	quirks |= QUIRK_LITTLE_ENDIAN;
-#endif
-
-	rc = packing(buf, (u64 *)val, start, end, len, PACK, quirks);
 	if (likely(!rc))
 		return;
 
@@ -43,14 +38,9 @@ void sja1105_pack(void *buf, const u64 *val, int start, int end, size_t len)
 
 void sja1105_unpack(const void *buf, u64 *val, int start, int end, size_t len)
 {
-	u8 quirks = QUIRK_LSW32_IS_FIRST;
-	int rc;
+	int rc = packing((void *)buf, val, start, end, len,
+			 UNPACK, QUIRK_LSW32_IS_FIRST);
 
-#if defined(__LITTLE_ENDIAN)
-	quirks |= QUIRK_LITTLE_ENDIAN;
-#endif
-
-	rc = packing((void *)buf, val, start, end, len, UNPACK, quirks);
 	if (likely(!rc))
 		return;
 
@@ -66,14 +56,8 @@ void sja1105_unpack(const void *buf, u64 *val, int start, int end, size_t len)
 void sja1105_packing(void *buf, u64 *val, int start, int end,
 		     size_t len, enum packing_op op)
 {
-	u8 quirks = QUIRK_LSW32_IS_FIRST;
-	int rc;
+	int rc = packing(buf, val, start, end, len, op, QUIRK_LSW32_IS_FIRST);
 
-#if defined(__LITTLE_ENDIAN)
-	quirks |= QUIRK_LITTLE_ENDIAN;
-#endif
-
-	rc = packing(buf, val, start, end, len, op, quirks);
 	if (likely(!rc))
 		return;
 
