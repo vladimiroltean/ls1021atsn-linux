@@ -101,6 +101,23 @@
 	};
 };
 
+&dspi1 {
+	bus-num = <1>;
+	status = "okay";
+
+	spidev@0 {
+		reg = <0x0>;
+		compatible = "rohm,dh2228fv";
+		/* 12 MHz */
+		spi-max-frequency = <12000000>;
+		/* Sample data on trailing clock edge */
+		spi-cpha;
+		/* SPI controller settings for SJA1105 timing requirements */
+		fsl,spi-cs-sck-delay = <1000>;
+		fsl,spi-sck-cs-delay = <1000>;
+	};
+};
+
 &enet0 {
 	tbi-handle = <&tbi0>;
 	phy-handle = <&sgmii_phy2>;
