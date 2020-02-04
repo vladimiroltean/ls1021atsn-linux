@@ -354,6 +354,8 @@
 			clocks = <&clockgen 4 1>;
 			spi-num-chipselects = <6>;
 			big-endian;
+			dma-names = "tx", "rx", "tx-dummy", "rx-dummy";
+			dmas = <&edma0 1 39>, <&edma0 1 38>;
 			status = "disabled";
 		};
 
@@ -367,6 +369,8 @@
 			clocks = <&clockgen 4 1>;
 			spi-num-chipselects = <6>;
 			big-endian;
+			dma-names = "tx", "rx", "tx-dummy", "rx-dummy";
+			dmas = <&edma0 1 39>, <&edma0 1 38>;
 			status = "disabled";
 		};
 
