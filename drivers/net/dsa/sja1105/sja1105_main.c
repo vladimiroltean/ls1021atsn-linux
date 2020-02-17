@@ -2122,7 +2122,7 @@ static int sja1105_probe(struct spi_device *spi)
 	/* Connections between dsa_port and sja1105_port */
 	for (port = 0; port < SJA1105_NUM_PORTS; port++) {
 		struct sja1105_port *sp = &priv->ports[port];
-		struct dsa_port *dp = dsa_to_port(ds, port);
+		struct dsa_port *dp = &ds->ports[port];
 		struct net_device *slave;
 
 		if (!dsa_is_user_port(ds, port))
